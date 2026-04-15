@@ -48,12 +48,17 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 
       - name: Show Swift version
         run: swift --version
+
+      - name: Install diff-cover
+        run: python3 -m pip install --user diff-cover
 
       - name: Test with coverage
         run: swift test --enable-code-coverage
@@ -68,6 +73,7 @@ jobs:
 
           if [[ -z "${PROF_DATA}" || -z "${TEST_BINARY}" ]]; then
             echo "Coverage artifacts not found"
+            find .build -maxdepth 5 -type f | sort
             exit 1
           fi
 
@@ -85,40 +91,45 @@ jobs:
             > coverage/lcov.info
 
           {
-            echo "## Coverage"
+            echo "## Full Coverage"
             echo
             echo '```text'
             cat coverage/coverage-report.txt
             echo '```'
           } >> "${GITHUB_STEP_SUMMARY}"
 
-      - name: Enforce coverage threshold
+      - name: Enforce diff coverage threshold
         shell: bash
         run: |
           set -euo pipefail
 
-          TOTAL_LINE=$(grep '^TOTAL' coverage/coverage-report.txt | tail -n 1)
+          BASE_REF="${GITHUB_BASE_REF:-${{ github.event.repository.default_branch }}}"
+          git fetch origin "${BASE_REF}" --depth=1
 
-          if [[ -z "${TOTAL_LINE}" ]]; then
-            echo "TOTAL line not found in coverage report"
+          python3 -m diff_cover.diff_cover_tool coverage/lcov.info \
+            --compare-branch "origin/${BASE_REF}" \
+            --fail-under "${COVERAGE_THRESHOLD}" \
+            --format markdown:coverage/diff-coverage.md \
+            --format html:coverage/diff-coverage.html \
+            > coverage/diff-coverage.txt
+
+          DIFF_COVERAGE_VALUE=$(grep -Eo 'Coverage:\s+[0-9]+(\.[0-9]+)?%' coverage/diff-coverage.txt | head -n 1 | sed -E 's/Coverage:\s+([0-9]+(\.[0-9]+)?)%/\1/')
+
+          if [[ -z "${DIFF_COVERAGE_VALUE}" ]]; then
+            echo "Diff coverage value not found"
+            cat coverage/diff-coverage.txt
             exit 1
           fi
 
-          COVERAGE_VALUE=$(echo "${TOTAL_LINE}" | awk '{print $(NF)}' | tr -d '%')
-
-          echo "Coverage: ${COVERAGE_VALUE}%"
-          echo "Threshold: ${COVERAGE_THRESHOLD}%"
-
           {
             echo
-            echo "Coverage threshold: ${COVERAGE_THRESHOLD}%"
-            echo "Measured coverage: ${COVERAGE_VALUE}%"
+            echo "## Diff Coverage"
+            echo
+            echo "Threshold: ${COVERAGE_THRESHOLD}%"
+            echo "Measured diff coverage: ${DIFF_COVERAGE_VALUE}%"
+            echo
+            cat coverage/diff-coverage.md
           } >> "${GITHUB_STEP_SUMMARY}"
-
-          awk -v actual="${COVERAGE_VALUE}" -v threshold="${COVERAGE_THRESHOLD}" 'BEGIN { exit !(actual + 0 >= threshold + 0) }' || {
-            echo "Coverage threshold check failed"
-            exit 1
-          }
 
       - name: Upload coverage artifacts
         if: always()
