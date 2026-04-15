@@ -131,4 +131,38 @@ final class HostModelTests: XCTestCase {
 
         XCTAssertEqual(status, .unreachable)
     }
+
+    func testJobDraftRequiresHostNameAndCommand() {
+        var draft = JobDraft()
+        draft.name = "train-resnet50"
+        draft.command = "python train.py"
+
+        XCTAssertFalse(draft.isValid)
+
+        draft.hostID = UUID()
+        XCTAssertTrue(draft.isValid)
+    }
+
+    func testJobMakeDraftRestoresEditableFields() {
+        let hostID = UUID()
+        let job = Job(
+            id: UUID(),
+            name: "train-resnet50",
+            hostID: hostID,
+            hostName: "gpu-01",
+            status: .running,
+            progressSummary: "Epoch 2/10",
+            startedAt: Date(timeIntervalSince1970: 100),
+            command: "python train.py",
+            workingDirectory: "~/project",
+            pid: 12345
+        )
+
+        let draft = job.makeDraft()
+
+        XCTAssertEqual(draft.name, "train-resnet50")
+        XCTAssertEqual(draft.hostID, hostID)
+        XCTAssertEqual(draft.command, "python train.py")
+        XCTAssertEqual(draft.workingDirectory, "~/project")
+    }
 }

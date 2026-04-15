@@ -431,6 +431,196 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(currentHosts, [existingHost])
     }
 
+    func testAddJobUsesSelectedHostIdentityAndTrimsFields() async {
+        let model = await MainActor.run {
+            AppModel(
+                loadHostsAction: { [] },
+                saveHostsAction: { _ in },
+                storageDirectoryDescriptionAction: { "/tmp/SSHub" },
+                connectivityCheckAction: { _ in "ok" }
+            )
+        }
+        let host = Host(
+            id: UUID(),
+            name: "gpu-01",
+            hostAlias: "gpu-01",
+            username: nil,
+            port: nil,
+            status: .reachable,
+            statusMessage: nil,
+            lastCheckedAt: nil
+        )
+
+        await MainActor.run {
+            model.hosts = [host]
+            model.jobs = []
+        }
+
+        var draft = JobDraft()
+        draft.name = " train-resnet50 "
+        draft.hostID = host.id
+        draft.command = " python train.py "
+        draft.workingDirectory = " ~/workspace "
+        let addDraft = draft
+
+        await MainActor.run {
+            model.addJob(from: addDraft)
+        }
+
+        let job = await MainActor.run { model.jobs.first }
+        XCTAssertEqual(job?.name, "train-resnet50")
+        XCTAssertEqual(job?.hostID, host.id)
+        XCTAssertEqual(job?.hostName, "gpu-01")
+        XCTAssertEqual(job?.command, "python train.py")
+        XCTAssertEqual(job?.workingDirectory, "~/workspace")
+        XCTAssertEqual(job?.status, .running)
+        XCTAssertEqual(job?.progressSummary, "Launching...")
+        XCTAssertNotNil(job?.pid)
+    }
+
+    func testUpdateJobMatchesByIdentifierAndPreservesRuntimeFields() async {
+        let model = await MainActor.run {
+            AppModel(
+                loadHostsAction: { [] },
+                saveHostsAction: { _ in },
+                storageDirectoryDescriptionAction: { "/tmp/SSHub" },
+                connectivityCheckAction: { _ in "ok" }
+            )
+        }
+        let originalHost = Host(
+            id: UUID(),
+            name: "gpu-01",
+            hostAlias: "gpu-01",
+            username: nil,
+            port: nil,
+            status: .reachable,
+            statusMessage: nil,
+            lastCheckedAt: nil
+        )
+        let replacementHost = Host(
+            id: UUID(),
+            name: "gpu-02",
+            hostAlias: "gpu-02",
+            username: nil,
+            port: nil,
+            status: .reachable,
+            statusMessage: nil,
+            lastCheckedAt: nil
+        )
+        let jobID = UUID()
+        let startedAt = Date(timeIntervalSince1970: 1234)
+        let job = Job(
+            id: jobID,
+            name: "train-resnet50",
+            hostID: originalHost.id,
+            hostName: originalHost.name,
+            status: .failed,
+            progressSummary: "stderr tail available",
+            startedAt: startedAt,
+            command: "python train.py",
+            workingDirectory: nil,
+            pid: 43210
+        )
+        let staleCopy = Job(
+            id: jobID,
+            name: "outdated",
+            hostID: originalHost.id,
+            hostName: originalHost.name,
+            status: .running,
+            progressSummary: "running",
+            startedAt: .now,
+            command: "old command",
+            workingDirectory: "~/old",
+            pid: nil
+        )
+
+        await MainActor.run {
+            model.hosts = [originalHost, replacementHost]
+            model.jobs = [job]
+        }
+
+        var draft = JobDraft()
+        draft.name = " updated-job "
+        draft.hostID = replacementHost.id
+        draft.command = " ./run.sh --resume "
+        draft.workingDirectory = " /tmp/run "
+        let updateDraft = draft
+
+        await MainActor.run {
+            model.updateJob(staleCopy, from: updateDraft)
+        }
+
+        let updatedJob = await MainActor.run { model.jobs.first }
+        XCTAssertEqual(updatedJob?.id, jobID)
+        XCTAssertEqual(updatedJob?.name, "updated-job")
+        XCTAssertEqual(updatedJob?.hostID, replacementHost.id)
+        XCTAssertEqual(updatedJob?.hostName, "gpu-02")
+        XCTAssertEqual(updatedJob?.command, "./run.sh --resume")
+        XCTAssertEqual(updatedJob?.workingDirectory, "/tmp/run")
+        XCTAssertEqual(updatedJob?.status, .failed)
+        XCTAssertEqual(updatedJob?.progressSummary, "stderr tail available")
+        XCTAssertEqual(updatedJob?.startedAt, startedAt)
+        XCTAssertEqual(updatedJob?.pid, 43210)
+    }
+
+    func testJobStatusActionsAndDeleteOperateByIdentifier() async {
+        let model = await MainActor.run {
+            AppModel(
+                loadHostsAction: { [] },
+                saveHostsAction: { _ in },
+                storageDirectoryDescriptionAction: { "/tmp/SSHub" },
+                connectivityCheckAction: { _ in "ok" }
+            )
+        }
+        let jobID = UUID()
+        let job = Job(
+            id: jobID,
+            name: "train-resnet50",
+            hostID: UUID(),
+            hostName: "gpu-01",
+            status: .running,
+            progressSummary: "Epoch 2/10",
+            startedAt: Date(timeIntervalSince1970: 100),
+            command: "python train.py",
+            workingDirectory: nil,
+            pid: 11111
+        )
+        let staleCopy = Job(
+            id: jobID,
+            name: "stale",
+            hostID: UUID(),
+            hostName: "gpu-01",
+            status: .failed,
+            progressSummary: "old",
+            startedAt: .now,
+            command: "old",
+            workingDirectory: "~/old",
+            pid: nil
+        )
+
+        await MainActor.run {
+            model.jobs = [job]
+            model.stopJob(staleCopy)
+        }
+
+        let stoppedJob = await MainActor.run { model.jobs.first }
+        XCTAssertEqual(stoppedJob?.status, .stopped)
+        XCTAssertEqual(stoppedJob?.progressSummary, "Stopped by user")
+
+        await MainActor.run {
+            model.restartJob(staleCopy)
+        }
+        let restartedJob = await MainActor.run { model.jobs.first }
+        XCTAssertEqual(restartedJob?.status, .running)
+        XCTAssertEqual(restartedJob?.progressSummary, "Restart requested")
+
+        await MainActor.run {
+            model.deleteJob(staleCopy)
+        }
+        let jobs = await MainActor.run { model.jobs }
+        XCTAssertTrue(jobs.isEmpty)
+    }
+
     private func waitUntil(
         timeoutNanoseconds: UInt64 = 2_000_000_000,
         pollIntervalNanoseconds: UInt64 = 20_000_000,
