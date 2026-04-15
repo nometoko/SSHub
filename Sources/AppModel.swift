@@ -2,6 +2,11 @@ import Foundation
 
 @MainActor
 final class AppModel: ObservableObject {
+    typealias LoadHostsAction = () throws -> [Host]
+    typealias SaveHostsAction = ([Host]) throws -> Void
+    typealias StorageDirectoryDescriptionAction = () -> String
+    typealias ConnectivityCheckAction = (Host) async throws -> String
+
     @Published var selectedSection: SidebarSection? = .dashboard
     @Published var hosts: [Host] = []
     @Published var jobs: [Job] = Job.sampleData
@@ -9,10 +14,31 @@ final class AppModel: ObservableObject {
     @Published var notificationSettings = NotificationSettings.sample
     @Published var hostErrorMessage: String?
 
-    private let hostStore = HostStore()
-    private let sshService = SSHService()
+    private let loadHostsAction: LoadHostsAction
+    private let saveHostsAction: SaveHostsAction
+    private let storageDirectoryDescriptionAction: StorageDirectoryDescriptionAction
+    private let connectivityCheckAction: ConnectivityCheckAction
 
     init() {
+        let hostStore = HostStore()
+        let sshService = SSHService()
+        loadHostsAction = hostStore.loadHosts
+        saveHostsAction = hostStore.saveHosts
+        storageDirectoryDescriptionAction = hostStore.storageDirectoryDescription
+        connectivityCheckAction = sshService.runConnectivityCheck
+        loadHosts()
+    }
+
+    init(
+        loadHostsAction: @escaping LoadHostsAction,
+        saveHostsAction: @escaping SaveHostsAction,
+        storageDirectoryDescriptionAction: @escaping StorageDirectoryDescriptionAction,
+        connectivityCheckAction: @escaping ConnectivityCheckAction
+    ) {
+        self.loadHostsAction = loadHostsAction
+        self.saveHostsAction = saveHostsAction
+        self.storageDirectoryDescriptionAction = storageDirectoryDescriptionAction
+        self.connectivityCheckAction = connectivityCheckAction
         loadHosts()
     }
 
@@ -69,7 +95,7 @@ final class AppModel: ObservableObject {
 
     func loadHosts() {
         do {
-            hosts = try hostStore.loadHosts()
+            hosts = try loadHostsAction()
             hostErrorMessage = nil
             refreshAllHostStatuses()
         } catch {
@@ -79,12 +105,12 @@ final class AppModel: ObservableObject {
     }
 
     func storageDirectoryDescription() -> String {
-        hostStore.storageDirectoryDescription()
+        storageDirectoryDescriptionAction()
     }
 
     private func persistHosts() {
         do {
-            try hostStore.saveHosts(hosts)
+            try saveHostsAction(hosts)
             hostErrorMessage = nil
         } catch {
             hostErrorMessage = error.localizedDescription
@@ -143,7 +169,7 @@ final class AppModel: ObservableObject {
         }
 
         do {
-            let output = try await sshService.runConnectivityCheck(for: host)
+            let output = try await connectivityCheckAction(host)
             await MainActor.run {
                 updateHostStatus(id: id, to: .reachable, message: output, lastCheckedAt: .now)
             }

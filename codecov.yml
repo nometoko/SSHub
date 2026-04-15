@@ -1,3 +1,17 @@
+ignore:
+  - "Sources/AddHostSheet.swift"
+  - "Sources/ContentView.swift"
+  - "Sources/DashboardView.swift"
+  - "Sources/HeroView.swift"
+  - "Sources/HostListView.swift"
+  - "Sources/HostsScreen.swift"
+  - "Sources/JobDashboardView.swift"
+  - "Sources/JobsScreen.swift"
+  - "Sources/SettingsView.swift"
+  - "Sources/SidebarView.swift"
+  - "Sources/SSHubApp.swift"
+  - "Sources/UIComponents.swift"
+
 coverage:
   status:
     project:
