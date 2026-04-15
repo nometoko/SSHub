@@ -34,14 +34,21 @@ struct SSHService {
 
             process.terminationHandler = { process in
                 let data = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                let output = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+                let output = String(bytes: data, encoding: .utf8)?
+                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
                 guard process.terminationStatus == 0 else {
-                    continuation.resume(throwing: SSHServiceError.connectivityCheckFailed(output.isEmpty ? "ssh failed" : output))
+                    continuation.resume(
+                        throwing: SSHServiceError.connectivityCheckFailed(
+                            output.isEmpty ? "ssh failed" : output
+                        )
+                    )
                     return
                 }
 
-                continuation.resume(returning: output.isEmpty ? "Reachability check OK" : output)
+                continuation.resume(
+                    returning: output.isEmpty ? "Reachability check OK" : output
+                )
             }
 
             do {

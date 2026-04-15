@@ -9,6 +9,7 @@
 - In Linux-based Codex environments, `swift build` or `swift test` may fail only because `SwiftUI` is unavailable. Treat that as an expected environment limitation, not as a product regression by itself.
 - In Codex Linux environments, do not run `swift build` as a default validation step for this repository.
 - Prefer static review and targeted pure-logic tests in Codex instead of app build validation.
+- Before committing locally, run `swiftlint lint --strict --no-cache`.
 - Do not rely on Linux execution for `SwiftUI` app behavior.
 - GitHub Actions runs macOS validation in `.github/workflows/macos-swift.yml`.
 - Prefer macOS GitHub Actions results over Linux container results when they disagree.

@@ -5,7 +5,10 @@ struct HostsScreen: View {
 
     var body: some View {
         ScrollView {
-            HostListView(hosts: appModel.hosts, layout: .full)
+            HostListView(
+                hosts: appModel.hosts,
+                layout: .full
+            )
                 .environmentObject(appModel)
                 .padding(24)
         }
