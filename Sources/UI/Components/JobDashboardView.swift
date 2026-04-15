@@ -148,8 +148,8 @@ struct JobDashboardView: View {
     }
 
     private func hostSummary(for job: Job) -> String {
-        guard !job.isHostAvailable(in: hosts) else {
-            return job.hostName
+        if let host = hosts.first(where: { $0.id == job.hostID }) {
+            return host.name
         }
 
         return "\(job.hostName) (removed)"
