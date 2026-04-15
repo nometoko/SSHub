@@ -8,6 +8,19 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Lint
+        run: swiftlint lint --strict --reporter github-actions-logging
+
   build-and-test:
     runs-on: macos-latest
     env:
@@ -22,12 +35,6 @@ jobs:
 
       - name: Show Swift version
         run: swift --version
-
-      - name: Install SwiftLint
-        run: brew install swiftlint
-
-      - name: Lint
-        run: swiftlint lint --strict --reporter github-actions-logging
 
       - name: Build
         run: swift build
