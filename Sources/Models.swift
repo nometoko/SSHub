@@ -87,7 +87,11 @@ enum HostStatus: String, Codable {
 }
 
 extension Host {
-    func withStatus(_ status: HostStatus, message: String? = nil, lastCheckedAt: Date? = nil) -> Host {
+    func withStatus(
+        _ status: HostStatus,
+        message: String? = nil,
+        lastCheckedAt: Date? = nil
+    ) -> Host {
         Host(
             id: id,
             name: name,
