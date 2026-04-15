@@ -12,12 +12,8 @@ struct AddHostSheet: View {
                 Section("Basic Info") {
                     TextField("Display name", text: $draft.name)
                     TextField("Host alias or hostname", text: $draft.hostAlias)
-                    TextField("Username", text: $draft.username)
-                    TextField(
-                        "Port",
-                        value: $draft.port,
-                        format: .number
-                    )
+                    TextField("Username override (optional)", text: $draft.username)
+                    TextField("Port override (optional)", text: $draft.portText)
                 }
             }
             .formStyle(.grouped)

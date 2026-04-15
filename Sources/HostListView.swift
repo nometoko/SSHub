@@ -53,8 +53,14 @@ struct HostListView: View {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(host.name)
                             .font(.headline)
-                        Text("\(host.username)@\(host.hostAlias):\(host.port)")
+                        Text(host.targetDescription)
                             .foregroundStyle(.secondary)
+                        if let statusMessage = host.statusMessage, !statusMessage.isEmpty {
+                            Text(statusMessage)
+                                .font(.footnote)
+                                .foregroundStyle(messageColor(for: host.status))
+                                .lineLimit(layout == .compact ? 2 : nil)
+                        }
                     }
 
                     Spacer()
@@ -64,8 +70,13 @@ struct HostListView: View {
 
                 if layout == .full {
                     HStack {
-                        Text("Host alias: \(host.hostAlias)")
+                        Text(host.username == nil && host.port == nil ? "Using ~/.ssh/config defaults" : "Using overrides where specified")
                         Spacer()
+                        Button("Reconnect") {
+                            appModel.reconnectHost(host)
+                        }
+                        .buttonStyle(.link)
+                        .disabled(host.status == .checking)
                         Button("Delete", role: .destructive) {
                             delete(host)
                         }
@@ -103,12 +114,27 @@ struct HostListView: View {
 
     private func tint(for status: HostStatus) -> Color {
         switch status {
+        case .checking:
+            return .orange
         case .connected:
             return .green
         case .disconnected:
             return .red
         case .unknown:
             return .gray
+        }
+    }
+
+    private func messageColor(for status: HostStatus) -> Color {
+        switch status {
+        case .checking:
+            return .orange
+        case .connected:
+            return .secondary
+        case .disconnected:
+            return .red
+        case .unknown:
+            return .secondary
         }
     }
 }

@@ -26,43 +26,88 @@ struct Host: Identifiable, Codable, Equatable {
     let id: UUID
     let name: String
     let hostAlias: String
-    let username: String
-    let port: Int
+    let username: String?
+    let port: Int?
     let status: HostStatus
+    let statusMessage: String?
 
     static let sampleData: [Host] = [
-        Host(id: UUID(), name: "gpu-01", hostAlias: "gpu-01.internal", username: "iwamoto", port: 22, status: .connected),
-        Host(id: UUID(), name: "sim-lab", hostAlias: "sim-lab.internal", username: "iwamoto", port: 22, status: .disconnected)
+        Host(id: UUID(), name: "gpu-01", hostAlias: "gpu-01", username: nil, port: nil, status: .connected, statusMessage: "Connection OK"),
+        Host(id: UUID(), name: "sim-lab", hostAlias: "sim-lab", username: "iwamoto", port: 2222, status: .disconnected, statusMessage: "Connection timed out")
     ]
 }
 
 enum HostStatus: String, Codable {
+    case checking
     case connected
     case disconnected
     case unknown
 }
 
+extension Host {
+    func withStatus(_ status: HostStatus, message: String? = nil) -> Host {
+        Host(
+            id: id,
+            name: name,
+            hostAlias: hostAlias,
+            username: username,
+            port: port,
+            status: status,
+            statusMessage: message
+        )
+    }
+
+    var targetDescription: String {
+        let base = username.map { "\($0)@\(hostAlias)" } ?? hostAlias
+
+        if let port {
+            return "\(base):\(port)"
+        }
+
+        return base
+    }
+}
+
 struct HostDraft {
     var name: String = ""
     var hostAlias: String = ""
-    var username: String = NSUserName()
-    var port: Int = 22
+    var username: String = ""
+    var portText: String = ""
 
     var isValid: Bool {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !hostAlias.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
-        (1...65535).contains(port)
+        hasValidPortOverride
+    }
+
+    private var hasValidPortOverride: Bool {
+        let trimmed = portText.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        if trimmed.isEmpty {
+            return true
+        }
+
+        guard let port = Int(trimmed) else {
+            return false
+        }
+
+        return (1...65535).contains(port)
     }
 
     func makeHost() -> Host {
-        Host(
+        let trimmedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
+        let usernameValue = trimmedUsername.isEmpty ? nil : trimmedUsername
+        let trimmedPortText = portText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let portValue = trimmedPortText.isEmpty ? nil : Int(trimmedPortText)
+
+        return Host(
             id: UUID(),
             name: name.trimmingCharacters(in: .whitespacesAndNewlines),
             hostAlias: hostAlias.trimmingCharacters(in: .whitespacesAndNewlines),
-            username: username.trimmingCharacters(in: .whitespacesAndNewlines),
-            port: port,
-            status: .unknown
+            username: usernameValue,
+            port: portValue,
+            status: .unknown,
+            statusMessage: nil
         )
     }
 }
