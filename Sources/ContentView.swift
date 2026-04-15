@@ -23,7 +23,9 @@ private struct DetailContainerView: View {
     @EnvironmentObject private var appModel: AppModel
 
     var body: some View {
-        switch appModel.selectedSection ?? .dashboard {
+        let selectedSection = appModel.selectedSection ?? .dashboard
+
+        switch selectedSection {
         case .dashboard:
             DashboardView()
         case .hosts:

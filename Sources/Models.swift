@@ -33,8 +33,26 @@ struct Host: Identifiable, Codable, Equatable {
     let lastCheckedAt: Date?
 
     static let sampleData: [Host] = [
-        Host(id: UUID(), name: "gpu-01", hostAlias: "gpu-01", username: nil, port: nil, status: .reachable, statusMessage: "Reachability check OK", lastCheckedAt: .now),
-        Host(id: UUID(), name: "sim-lab", hostAlias: "sim-lab", username: "iwamoto", port: 2222, status: .unreachable, statusMessage: "Connection timed out", lastCheckedAt: .now.addingTimeInterval(-900))
+        Host(
+            id: UUID(),
+            name: "gpu-01",
+            hostAlias: "gpu-01",
+            username: nil,
+            port: nil,
+            status: .reachable,
+            statusMessage: "Reachability check OK",
+            lastCheckedAt: .now
+        ),
+        Host(
+            id: UUID(),
+            name: "sim-lab",
+            hostAlias: "sim-lab",
+            username: "iwamoto",
+            port: 2222,
+            status: .unreachable,
+            statusMessage: "Connection timed out",
+            lastCheckedAt: .now.addingTimeInterval(-900)
+        )
     ]
 }
 

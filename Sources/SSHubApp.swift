@@ -11,7 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 @main
 struct SSHubApp: App {
-    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+    @NSApplicationDelegateAdaptor(AppDelegate.self)
+    private var appDelegate
     @StateObject private var appModel = AppModel()
 
     var body: some Scene {
