@@ -38,7 +38,8 @@ final class AppModel: ObservableObject {
                 return trimmedPort.isEmpty ? nil : Int(trimmedPort)
             }(),
             status: .checking,
-            statusMessage: "Checking connection..."
+            statusMessage: "Checking reachability...",
+            lastCheckedAt: host.lastCheckedAt
         )
 
         hosts[index] = updatedHost
@@ -61,13 +62,6 @@ final class AppModel: ObservableObject {
 
     func reconnectHost(_ host: Host) {
         refreshHostStatus(for: host.id)
-    }
-
-    func disconnectHost(_ host: Host) {
-        updateHostStatus(id: host.id, to: .disconnected, message: "Disconnected manually")
-        persistHosts()
-        let connectedCount = hosts.filter { $0.status == .connected }.count
-        backendStatus = "Host check finished: \(connectedCount)/\(hosts.count) connected"
     }
 
     func loadHosts() {
@@ -103,7 +97,7 @@ final class AppModel: ObservableObject {
         let ids = hosts.map(\.id)
 
         for id in ids {
-            updateHostStatus(id: id, to: .checking, message: "Checking connection...")
+            updateHostStatus(id: id, to: .checking, message: "Checking reachability...")
         }
 
         backendStatus = "Checking \(ids.count) host(s)..."
@@ -118,23 +112,23 @@ final class AppModel: ObservableObject {
             }
 
             await MainActor.run {
-                let connectedCount = hosts.filter { $0.status == .connected }.count
-                backendStatus = "Host check finished: \(connectedCount)/\(hosts.count) connected"
+                let reachableCount = hosts.filter { $0.status == .reachable }.count
+                backendStatus = "Reachability check finished: \(reachableCount)/\(hosts.count) reachable"
                 persistHosts()
             }
         }
     }
 
     private func refreshHostStatus(for hostID: UUID) {
-        updateHostStatus(id: hostID, to: .checking, message: "Checking connection...")
-        backendStatus = "Checking host connection..."
+        updateHostStatus(id: hostID, to: .checking, message: "Checking reachability...")
+        backendStatus = "Checking host reachability..."
 
         Task {
             await checkHost(id: hostID)
 
             await MainActor.run {
-                let connectedCount = hosts.filter { $0.status == .connected }.count
-                backendStatus = "Host check finished: \(connectedCount)/\(hosts.count) connected"
+                let reachableCount = hosts.filter { $0.status == .reachable }.count
+                backendStatus = "Reachability check finished: \(reachableCount)/\(hosts.count) reachable"
                 persistHosts()
             }
         }
@@ -148,20 +142,21 @@ final class AppModel: ObservableObject {
         do {
             let output = try await sshService.runConnectivityCheck(for: host)
             await MainActor.run {
-                updateHostStatus(id: id, to: .connected, message: output)
+                updateHostStatus(id: id, to: .reachable, message: output, lastCheckedAt: .now)
             }
         } catch {
             await MainActor.run {
-                updateHostStatus(id: id, to: .disconnected, message: error.localizedDescription)
+                updateHostStatus(id: id, to: .unreachable, message: error.localizedDescription, lastCheckedAt: .now)
             }
         }
     }
 
-    private func updateHostStatus(id: UUID, to status: HostStatus, message: String? = nil) {
+    private func updateHostStatus(id: UUID, to status: HostStatus, message: String? = nil, lastCheckedAt: Date? = nil) {
         guard let index = hosts.firstIndex(where: { $0.id == id }) else {
             return
         }
 
-        hosts[index] = hosts[index].withStatus(status, message: message)
+        let checkedAt = lastCheckedAt ?? hosts[index].lastCheckedAt
+        hosts[index] = hosts[index].withStatus(status, message: message, lastCheckedAt: checkedAt)
     }
 }

@@ -37,7 +37,7 @@ struct SSHService {
                     return
                 }
 
-                continuation.resume(returning: output.isEmpty ? "Connection OK" : output)
+                continuation.resume(returning: output.isEmpty ? "Reachability check OK" : output)
             }
 
             do {

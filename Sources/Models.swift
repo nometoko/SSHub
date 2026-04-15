@@ -30,22 +30,46 @@ struct Host: Identifiable, Codable, Equatable {
     let port: Int?
     let status: HostStatus
     let statusMessage: String?
+    let lastCheckedAt: Date?
 
     static let sampleData: [Host] = [
-        Host(id: UUID(), name: "gpu-01", hostAlias: "gpu-01", username: nil, port: nil, status: .connected, statusMessage: "Connection OK"),
-        Host(id: UUID(), name: "sim-lab", hostAlias: "sim-lab", username: "iwamoto", port: 2222, status: .disconnected, statusMessage: "Connection timed out")
+        Host(id: UUID(), name: "gpu-01", hostAlias: "gpu-01", username: nil, port: nil, status: .reachable, statusMessage: "Reachability check OK", lastCheckedAt: .now),
+        Host(id: UUID(), name: "sim-lab", hostAlias: "sim-lab", username: "iwamoto", port: 2222, status: .unreachable, statusMessage: "Connection timed out", lastCheckedAt: .now.addingTimeInterval(-900))
     ]
 }
 
 enum HostStatus: String, Codable {
     case checking
-    case connected
-    case disconnected
+    case reachable
+    case unreachable
     case unknown
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.singleValueContainer()
+        let rawValue = try container.decode(String.self)
+
+        switch rawValue {
+        case "checking":
+            self = .checking
+        case "reachable", "connected":
+            self = .reachable
+        case "unreachable", "disconnected":
+            self = .unreachable
+        case "unknown":
+            self = .unknown
+        default:
+            self = .unknown
+        }
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
 }
 
 extension Host {
-    func withStatus(_ status: HostStatus, message: String? = nil) -> Host {
+    func withStatus(_ status: HostStatus, message: String? = nil, lastCheckedAt: Date? = nil) -> Host {
         Host(
             id: id,
             name: name,
@@ -53,11 +77,12 @@ extension Host {
             username: username,
             port: port,
             status: status,
-            statusMessage: message
+            statusMessage: message,
+            lastCheckedAt: lastCheckedAt
         )
     }
 
-    var targetDescription: String {
+    var displayTarget: String {
         let base = username.map { "\($0)@\(hostAlias)" } ?? hostAlias
 
         if let port {
@@ -74,6 +99,22 @@ extension Host {
             username: username ?? "",
             portText: port.map(String.init) ?? ""
         )
+    }
+
+    var displayStatusMessage: String? {
+        guard let statusMessage, !statusMessage.isEmpty else {
+            return nil
+        }
+
+        if status == .reachable {
+            let normalized = statusMessage.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+
+            if normalized == "ok" || normalized == "reachability check ok" {
+                return nil
+            }
+        }
+
+        return statusMessage
     }
 }
 
@@ -116,7 +157,8 @@ struct HostDraft {
             username: usernameValue,
             port: portValue,
             status: .unknown,
-            statusMessage: nil
+            statusMessage: nil,
+            lastCheckedAt: nil
         )
     }
 }

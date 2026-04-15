@@ -12,6 +12,12 @@ struct HostListView: View {
 
     @State private var isPresentingAddHostSheet = false
     @State private var editingHost: Host?
+    private let checkedAtFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyy/MM/dd HH:mm"
+        return formatter
+    }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -58,15 +64,53 @@ struct HostListView: View {
 
     private var hostRows: some View {
         ForEach(hosts) { host in
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .top, spacing: 16) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(host.name)
-                            .font(.title3.weight(.semibold))
-                        Text(host.targetDescription)
-                            .font(.body)
-                            .foregroundStyle(.secondary)
-                        if let statusMessage = host.statusMessage, !statusMessage.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .center, spacing: 10) {
+                            Text(host.name)
+                                .font(.title3.weight(.semibold))
+
+                            if layout == .full {
+                                HStack(spacing: 8) {
+                                    iconButton(
+                                        systemName: "pencil",
+                                        label: "Edit Host"
+                                    ) {
+                                        editingHost = host
+                                    }
+
+                                    iconButton(
+                                        systemName: "arrow.clockwise",
+                                        label: "Recheck Host",
+                                        isProminent: true
+                                    ) {
+                                        appModel.reconnectHost(host)
+                                    }
+                                    .disabled(host.status == .checking)
+
+                                    iconButton(
+                                        systemName: "trash",
+                                        label: "Delete Host",
+                                        role: .destructive
+                                    ) {
+                                        appModel.deleteHost(host)
+                                    }
+                                }
+                            }
+                        }
+
+                        Label {
+                            Text(host.displayTarget)
+                                .font(.subheadline.weight(.medium))
+                                .monospaced()
+                                .textSelection(.enabled)
+                        } icon: {
+                            Image(systemName: "server.rack")
+                        }
+                        .foregroundStyle(.secondary)
+
+                        if let statusMessage = host.displayStatusMessage {
                             Text(statusMessage)
                                 .font(.subheadline)
                                 .foregroundStyle(messageColor(for: host.status))
@@ -76,49 +120,36 @@ struct HostListView: View {
 
                     Spacer()
 
-                    StatusBadge(text: host.status.rawValue, tint: tint(for: host.status))
+                    VStack(alignment: .trailing, spacing: 8) {
+                        StatusBadge(text: host.status.rawValue, tint: tint(for: host.status))
+
+                        if let lastCheckedAt = host.lastCheckedAt {
+                            Label {
+                                Text("Last checked: \(checkedAtFormatter.string(from: lastCheckedAt))")
+                                    .font(.footnote.weight(.medium))
+                            } icon: {
+                                Image(systemName: "clock")
+                            }
+                            .foregroundStyle(.tertiary)
+                        }
+                    }
                 }
 
-                if layout == .full {
-                    HStack(alignment: .center, spacing: 12) {
-                        Text(host.username == nil && host.port == nil ? "Using ~/.ssh/config defaults" : "Using overrides where specified")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
-
-                        Spacer()
-
-                        Button("Edit") {
-                            editingHost = host
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-
-                        Button(connectionButtonTitle(for: host)) {
-                            handleConnectionAction(for: host)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .disabled(host.status == .checking)
-
-                        Button("Delete", role: .destructive) {
-                            appModel.deleteHost(host)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.large)
-                    }
-                } else {
+                if layout != .full {
                     HStack(spacing: 10) {
                         Spacer()
-                        Button(connectionButtonTitle(for: host)) {
-                            handleConnectionAction(for: host)
+                        iconButton(
+                            systemName: "arrow.clockwise",
+                            label: "Recheck Host"
+                        ) {
+                            appModel.reconnectHost(host)
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.regular)
                         .disabled(host.status == .checking)
                     }
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 14)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
     }
@@ -140,9 +171,9 @@ struct HostListView: View {
         switch status {
         case .checking:
             return .orange
-        case .connected:
+        case .reachable:
             return .green
-        case .disconnected:
+        case .unreachable:
             return .red
         case .unknown:
             return .gray
@@ -153,33 +184,105 @@ struct HostListView: View {
         switch status {
         case .checking:
             return .orange
-        case .connected:
+        case .reachable:
             return .secondary
-        case .disconnected:
+        case .unreachable:
             return .red
         case .unknown:
             return .secondary
         }
     }
 
-    private func connectionButtonTitle(for host: Host) -> String {
-        switch host.status {
-        case .connected:
-            return "Disconnect"
-        case .checking, .disconnected, .unknown:
-            return "Connect"
+    private func iconButton(
+        systemName: String,
+        label: String,
+        role: ButtonRole? = nil,
+        isProminent: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        HostActionButton(
+            systemName: systemName,
+            label: label,
+            role: role,
+            isProminent: isProminent,
+            action: action
+        )
+    }
+}
+
+private struct HostActionButton: View {
+    let systemName: String
+    let label: String
+    let role: ButtonRole?
+    let isProminent: Bool
+    let action: () -> Void
+
+    @State private var isHovering = false
+    @State private var isShowingTooltip = false
+    @State private var hoverTask: Task<Void, Never>?
+
+    var body: some View {
+        Group {
+            if isProminent {
+                Button(role: role, action: action) {
+                    icon
+                }
+                .buttonStyle(.borderedProminent)
+            } else {
+                Button(role: role, action: action) {
+                    icon
+                }
+                .buttonStyle(.bordered)
+            }
+        }
+        .controlSize(.regular)
+        .accessibilityLabel(label)
+        .overlay(alignment: .top) {
+            if isShowingTooltip {
+                Text(label)
+                    .font(.caption)
+                    .fixedSize()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(.regularMaterial, in: Capsule())
+                    .shadow(color: Color.black.opacity(0.12), radius: 8, y: 2)
+                    .offset(y: -34)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.combined(with: .scale(scale: 0.96)))
+            }
+        }
+        .zIndex(isShowingTooltip ? 10 : 0)
+        .onHover { hovering in
+            isHovering = hovering
+            hoverTask?.cancel()
+
+            if hovering {
+                hoverTask = Task {
+                    try? await Task.sleep(for: .milliseconds(150))
+                    guard !Task.isCancelled else { return }
+                    await MainActor.run {
+                        if isHovering {
+                            withAnimation(.easeOut(duration: 0.12)) {
+                                isShowingTooltip = true
+                            }
+                        }
+                    }
+                }
+            } else {
+                withAnimation(.easeOut(duration: 0.08)) {
+                    isShowingTooltip = false
+                }
+            }
+        }
+        .onDisappear {
+            hoverTask?.cancel()
         }
     }
 
-    private func handleConnectionAction(for host: Host) {
-        switch host.status {
-        case .connected:
-            appModel.disconnectHost(host)
-        case .checking:
-            break
-        case .disconnected, .unknown:
-            appModel.reconnectHost(host)
-        }
+    private var icon: some View {
+        Image(systemName: systemName)
+            .font(.body.weight(.semibold))
+            .frame(width: 16, height: 16)
     }
 }
 
