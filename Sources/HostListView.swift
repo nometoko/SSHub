@@ -11,6 +11,7 @@ struct HostListView: View {
     var layout: LayoutMode = .compact
 
     @State private var isPresentingAddHostSheet = false
+    @State private var editingHost: Host?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -35,7 +36,7 @@ struct HostListView: View {
             }
         }
         .frame(
-            maxWidth: layout == .compact ? 360 : .infinity,
+            maxWidth: layout == .compact ? 420 : .infinity,
             alignment: .topLeading
         )
         .panelStyle()
@@ -44,20 +45,30 @@ struct HostListView: View {
                 appModel.addHost(from: draft)
             }
         }
+        .sheet(item: $editingHost) { host in
+            AddHostSheet(
+                title: "Edit Host",
+                saveButtonTitle: "Update",
+                initialDraft: host.makeDraft()
+            ) { draft in
+                appModel.updateHost(host, from: draft)
+            }
+        }
     }
 
     private var hostRows: some View {
         ForEach(hosts) { host in
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack(alignment: .top, spacing: 16) {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(host.name)
-                            .font(.headline)
+                            .font(.title3.weight(.semibold))
                         Text(host.targetDescription)
+                            .font(.body)
                             .foregroundStyle(.secondary)
                         if let statusMessage = host.statusMessage, !statusMessage.isEmpty {
                             Text(statusMessage)
-                                .font(.footnote)
+                                .font(.subheadline)
                                 .foregroundStyle(messageColor(for: host.status))
                                 .lineLimit(layout == .compact ? 2 : nil)
                         }
@@ -69,24 +80,45 @@ struct HostListView: View {
                 }
 
                 if layout == .full {
-                    HStack {
+                    HStack(alignment: .center, spacing: 12) {
                         Text(host.username == nil && host.port == nil ? "Using ~/.ssh/config defaults" : "Using overrides where specified")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
                         Spacer()
-                        Button("Reconnect") {
-                            appModel.reconnectHost(host)
+
+                        Button("Edit") {
+                            editingHost = host
                         }
-                        .buttonStyle(.link)
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
+
+                        Button(connectionButtonTitle(for: host)) {
+                            handleConnectionAction(for: host)
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.large)
                         .disabled(host.status == .checking)
+
                         Button("Delete", role: .destructive) {
-                            delete(host)
+                            appModel.deleteHost(host)
                         }
-                        .buttonStyle(.link)
+                        .buttonStyle(.bordered)
+                        .controlSize(.large)
                     }
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                } else {
+                    HStack(spacing: 10) {
+                        Spacer()
+                        Button(connectionButtonTitle(for: host)) {
+                            handleConnectionAction(for: host)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.regular)
+                        .disabled(host.status == .checking)
+                    }
                 }
             }
-            .padding(16)
+            .padding(20)
             .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
     }
@@ -102,14 +134,6 @@ struct HostListView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(20)
         .background(Color(nsColor: .controlBackgroundColor), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-    }
-
-    private func delete(_ host: Host) {
-        guard let index = appModel.hosts.firstIndex(of: host) else {
-            return
-        }
-
-        appModel.deleteHosts(at: IndexSet(integer: index))
     }
 
     private func tint(for status: HostStatus) -> Color {
@@ -135,6 +159,26 @@ struct HostListView: View {
             return .red
         case .unknown:
             return .secondary
+        }
+    }
+
+    private func connectionButtonTitle(for host: Host) -> String {
+        switch host.status {
+        case .connected:
+            return "Disconnect"
+        case .checking, .disconnected, .unknown:
+            return "Connect"
+        }
+    }
+
+    private func handleConnectionAction(for host: Host) {
+        switch host.status {
+        case .connected:
+            appModel.disconnectHost(host)
+        case .checking:
+            break
+        case .disconnected, .unknown:
+            appModel.reconnectHost(host)
         }
     }
 }

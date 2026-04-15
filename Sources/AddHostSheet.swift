@@ -2,9 +2,24 @@ import SwiftUI
 
 struct AddHostSheet: View {
     @Environment(\.dismiss) private var dismiss
-    @State private var draft = HostDraft()
+    @State private var draft: HostDraft
+
+    let title: String
+    let saveButtonTitle: String
 
     let onSave: (HostDraft) -> Void
+
+    init(
+        title: String = "Add Host",
+        saveButtonTitle: String = "Save",
+        initialDraft: HostDraft = HostDraft(),
+        onSave: @escaping (HostDraft) -> Void
+    ) {
+        self.title = title
+        self.saveButtonTitle = saveButtonTitle
+        self.onSave = onSave
+        _draft = State(initialValue: initialDraft)
+    }
 
     var body: some View {
         NavigationStack {
@@ -17,7 +32,7 @@ struct AddHostSheet: View {
                 }
             }
             .formStyle(.grouped)
-            .navigationTitle("Add Host")
+            .navigationTitle(title)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -26,7 +41,7 @@ struct AddHostSheet: View {
                 }
 
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") {
+                    Button(saveButtonTitle) {
                         onSave(draft)
                         dismiss()
                     }

@@ -23,13 +23,51 @@ final class AppModel: ObservableObject {
         refreshHostStatus(for: newHost.id)
     }
 
+    func updateHost(_ host: Host, from draft: HostDraft) {
+        guard let index = hosts.firstIndex(where: { $0.id == host.id }) else {
+            return
+        }
+
+        let updatedHost = Host(
+            id: host.id,
+            name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines),
+            hostAlias: draft.hostAlias.trimmingCharacters(in: .whitespacesAndNewlines),
+            username: draft.username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : draft.username.trimmingCharacters(in: .whitespacesAndNewlines),
+            port: {
+                let trimmedPort = draft.portText.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmedPort.isEmpty ? nil : Int(trimmedPort)
+            }(),
+            status: .checking,
+            statusMessage: "Checking connection..."
+        )
+
+        hosts[index] = updatedHost
+        persistHosts()
+        refreshHostStatus(for: host.id)
+    }
+
     func deleteHosts(at offsets: IndexSet) {
         hosts.remove(atOffsets: offsets)
         persistHosts()
     }
 
+    func deleteHost(_ host: Host) {
+        guard let index = hosts.firstIndex(of: host) else {
+            return
+        }
+
+        deleteHosts(at: IndexSet(integer: index))
+    }
+
     func reconnectHost(_ host: Host) {
         refreshHostStatus(for: host.id)
+    }
+
+    func disconnectHost(_ host: Host) {
+        updateHostStatus(id: host.id, to: .disconnected, message: "Disconnected manually")
+        persistHosts()
+        let connectedCount = hosts.filter { $0.status == .connected }.count
+        backendStatus = "Host check finished: \(connectedCount)/\(hosts.count) connected"
     }
 
     func loadHosts() {

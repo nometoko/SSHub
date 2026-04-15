@@ -66,6 +66,15 @@ extension Host {
 
         return base
     }
+
+    func makeDraft() -> HostDraft {
+        HostDraft(
+            name: name,
+            hostAlias: hostAlias,
+            username: username ?? "",
+            portText: port.map(String.init) ?? ""
+        )
+    }
 }
 
 struct HostDraft {
