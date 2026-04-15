@@ -185,43 +185,118 @@ struct HostDraft {
     }
 }
 
-struct Job: Identifiable {
+struct Job: Identifiable, Codable, Equatable {
     let id: UUID
     let name: String
+    let hostID: UUID
     let hostName: String
     let status: JobStatus
     let progressSummary: String
     let startedAt: Date
     let command: String
+    let workingDirectory: String?
+    let pid: Int?
 
     static let sampleData: [Job] = [
         Job(
             id: UUID(),
             name: "train-resnet50",
+            hostID: UUID(),
             hostName: "gpu-01",
             status: .running,
             progressSummary: "Epoch 3/10",
             startedAt: .now.addingTimeInterval(-4200),
-            command: "python train.py --config configs/resnet50.yaml"
+            command: "python train.py --config configs/resnet50.yaml",
+            workingDirectory: "~/projects/vision",
+            pid: 41231
         ),
         Job(
             id: UUID(),
             name: "fluid-sim-case7",
+            hostID: UUID(),
             hostName: "sim-lab",
             status: .failed,
             progressSummary: "stderr tail available",
             startedAt: .now.addingTimeInterval(-11600),
-            command: "./run_simulation.sh case7"
+            command: "./run_simulation.sh case7",
+            workingDirectory: "~/simulations/case7",
+            pid: 28114
         )
     ]
 }
 
-enum JobStatus: String {
+enum JobStatus: String, Codable, CaseIterable, Hashable {
     case running
+    case queued
     case completed
     case failed
     case stopped
     case unknown
+}
+
+extension Job {
+    func isHostAvailable(in hosts: [Host]) -> Bool {
+        hosts.contains(where: { $0.id == hostID })
+    }
+
+    var runtimeSummary: String {
+        let components = startedAt.formatted(date: .abbreviated, time: .shortened)
+        return "Started: \(components)"
+    }
+
+    var executionSummary: String? {
+        if let pid {
+            return "PID \(pid)"
+        }
+
+        return nil
+    }
+
+    func makeDraft() -> JobDraft {
+        JobDraft(
+            name: name,
+            hostID: hostID,
+            command: command,
+            workingDirectory: workingDirectory ?? ""
+        )
+    }
+}
+
+struct JobDraft {
+    var name: String = ""
+    var hostID: UUID?
+    var command: String = ""
+    var workingDirectory: String = ""
+
+    var isValid: Bool {
+        hostID != nil &&
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
+        !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func normalizedHostID(in hosts: [Host]) -> UUID? {
+        guard !hosts.isEmpty else {
+            return nil
+        }
+
+        if let hostID, hosts.contains(where: { $0.id == hostID }) {
+            return hostID
+        }
+
+        if hostID == nil {
+            return hosts.first?.id
+        }
+
+        return hostID
+    }
+
+    func selectedHostExists(in hosts: [Host]) -> Bool {
+        guard let hostID else {
+            return false
+        }
+
+        return hosts.contains(where: { $0.id == hostID })
+    }
 }
 
 struct NotificationSettings {
