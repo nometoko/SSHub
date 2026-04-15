@@ -16,6 +16,11 @@ let package = Package(
         .executableTarget(
             name: "SSHub",
             path: "Sources"
+        ),
+        .testTarget(
+            name: "SSHubTests",
+            dependencies: ["SSHub"],
+            path: "Tests/SSHubTests"
         )
     ]
 )
