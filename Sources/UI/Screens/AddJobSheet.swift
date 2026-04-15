@@ -22,7 +22,9 @@ struct AddJobSheet: View {
         self.onSave = onSave
 
         let fallbackHostID = hosts.first?.id
-        _draft = State(initialValue: initialDraft ?? JobDraft(hostID: fallbackHostID))
+        var draft = initialDraft ?? JobDraft(hostID: fallbackHostID)
+        draft.hostID = draft.normalizedHostID(in: hosts)
+        _draft = State(initialValue: draft)
     }
 
     var body: some View {

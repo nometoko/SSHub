@@ -143,6 +143,39 @@ final class HostModelTests: XCTestCase {
         XCTAssertTrue(draft.isValid)
     }
 
+    func testJobDraftNormalizedHostIDKeepsExistingHost() {
+        let selectedHost = Host(
+            id: UUID(),
+            name: "gpu-01",
+            hostAlias: "gpu-01",
+            username: nil,
+            port: nil,
+            status: .unknown,
+            statusMessage: nil,
+            lastCheckedAt: nil
+        )
+        let draft = JobDraft(hostID: selectedHost.id)
+
+        XCTAssertEqual(draft.normalizedHostID(in: [selectedHost]), selectedHost.id)
+    }
+
+    func testJobDraftNormalizedHostIDFallsBackWhenStale() {
+        let fallbackHost = Host(
+            id: UUID(),
+            name: "sim-lab",
+            hostAlias: "sim-lab",
+            username: nil,
+            port: nil,
+            status: .unknown,
+            statusMessage: nil,
+            lastCheckedAt: nil
+        )
+        let staleDraft = JobDraft(hostID: UUID())
+
+        XCTAssertEqual(staleDraft.normalizedHostID(in: [fallbackHost]), fallbackHost.id)
+        XCTAssertNil(staleDraft.normalizedHostID(in: []))
+    }
+
     func testJobMakeDraftRestoresEditableFields() {
         let hostID = UUID()
         let job = Job(

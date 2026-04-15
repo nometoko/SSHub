@@ -269,6 +269,18 @@ struct JobDraft {
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
+
+    func normalizedHostID(in hosts: [Host]) -> UUID? {
+        guard !hosts.isEmpty else {
+            return nil
+        }
+
+        if let hostID, hosts.contains(where: { $0.id == hostID }) {
+            return hostID
+        }
+
+        return hosts.first?.id
+    }
 }
 
 struct NotificationSettings {
