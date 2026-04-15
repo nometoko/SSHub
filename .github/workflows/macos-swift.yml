@@ -104,7 +104,7 @@ jobs:
             exit 1
           fi
 
-          COVERAGE_VALUE=$(echo "${TOTAL_LINE}" | awk '{print $(NF-1)}' | tr -d '%')
+          COVERAGE_VALUE=$(echo "${TOTAL_LINE}" | awk '{print $(NF)}' | tr -d '%')
 
           echo "Coverage: ${COVERAGE_VALUE}%"
           echo "Threshold: ${COVERAGE_THRESHOLD}%"
