@@ -302,16 +302,27 @@ private final class SaveRecorder {
 }
 
 private actor ConnectivityCheckRecorder {
-    private let result: Result<String, Error>
+    private let result: Result<String, Error>?
+    private let resultsByAlias: [String: Result<String, Error>]
     private var requestedHosts: [SSHub.Host] = []
 
     init(result: Result<String, Error>) {
         self.result = result
+        self.resultsByAlias = [:]
+    }
+
+    init(resultsByAlias: [String: Result<String, Error>]) {
+        self.result = nil
+        self.resultsByAlias = resultsByAlias
     }
 
     func run(host: SSHub.Host) throws -> String {
         requestedHosts.append(host)
-        return try result.get()
+        if let result {
+            return try result.get()
+        }
+
+        return try resultsByAlias[host.hostAlias, default: .success("Reachability check OK")].get()
     }
 
     func checkedHostAliases() -> [String] {
