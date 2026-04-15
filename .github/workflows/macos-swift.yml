@@ -10,6 +10,8 @@ on:
 jobs:
   build-and-test:
     runs-on: macos-latest
+    env:
+      COVERAGE_THRESHOLD: "80.0"
 
     steps:
       - name: Checkout
@@ -21,8 +23,83 @@ jobs:
       - name: Show Swift version
         run: swift --version
 
+      - name: Install SwiftLint
+        run: brew install swiftlint
+
+      - name: Lint
+        run: swiftlint lint --strict --reporter github-actions-logging
+
       - name: Build
         run: swift build
 
       - name: Test
-        run: swift test
+        run: swift test --enable-code-coverage
+
+      - name: Generate coverage report
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PROF_DATA=$(find .build -name default.profdata | head -n 1)
+          TEST_BINARY=$(find .build -path "*SSHubPackageTests.xctest/Contents/MacOS/SSHubPackageTests" | head -n 1)
+
+          if [[ -z "${PROF_DATA}" || -z "${TEST_BINARY}" ]]; then
+            echo "Coverage artifacts not found"
+            exit 1
+          fi
+
+          mkdir -p coverage
+
+          xcrun llvm-cov report \
+            "${TEST_BINARY}" \
+            -instr-profile "${PROF_DATA}" \
+            > coverage/coverage-report.txt
+
+          xcrun llvm-cov export \
+            "${TEST_BINARY}" \
+            -instr-profile "${PROF_DATA}" \
+            -format="lcov" \
+            > coverage/lcov.info
+
+          {
+            echo "## Coverage"
+            echo
+            echo '```text'
+            cat coverage/coverage-report.txt
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+      - name: Enforce coverage threshold
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TOTAL_LINE=$(grep '^TOTAL' coverage/coverage-report.txt | tail -n 1)
+
+          if [[ -z "${TOTAL_LINE}" ]]; then
+            echo "TOTAL line not found in coverage report"
+            exit 1
+          fi
+
+          COVERAGE_VALUE=$(echo "${TOTAL_LINE}" | awk '{print $(NF-1)}' | tr -d '%')
+
+          echo "Coverage: ${COVERAGE_VALUE}%"
+          echo "Threshold: ${COVERAGE_THRESHOLD}%"
+
+          {
+            echo
+            echo "Coverage threshold: ${COVERAGE_THRESHOLD}%"
+            echo "Measured coverage: ${COVERAGE_VALUE}%"
+          } >> "${GITHUB_STEP_SUMMARY}"
+
+          awk -v actual="${COVERAGE_VALUE}" -v threshold="${COVERAGE_THRESHOLD}" 'BEGIN { exit !(actual + 0 >= threshold + 0) }' || {
+            echo "Coverage threshold check failed"
+            exit 1
+          }
+
+      - name: Upload coverage artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: coverage/
