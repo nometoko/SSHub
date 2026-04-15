@@ -53,7 +53,7 @@ final class AppModel: ObservableObject {
     }
 
     func deleteHost(_ host: Host) {
-        guard let index = hosts.firstIndex(of: host) else {
+        guard let index = hosts.firstIndex(where: { $0.id == host.id }) else {
             return
         }
 
