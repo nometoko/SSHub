@@ -1,0 +1,12 @@
+#!/bin/sh
+
+set -eu
+
+if ! command -v swiftlint >/dev/null 2>&1; then
+  echo "swiftlint is not installed."
+  echo "Install it with: brew install swiftlint"
+  exit 1
+fi
+
+echo "Running SwiftLint..."
+swiftlint lint --strict --no-cache

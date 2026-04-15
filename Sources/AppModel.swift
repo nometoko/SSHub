@@ -32,7 +32,10 @@ final class AppModel: ObservableObject {
             id: host.id,
             name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines),
             hostAlias: draft.hostAlias.trimmingCharacters(in: .whitespacesAndNewlines),
-            username: draft.username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : draft.username.trimmingCharacters(in: .whitespacesAndNewlines),
+            username: {
+                let trimmedUsername = draft.username.trimmingCharacters(in: .whitespacesAndNewlines)
+                return trimmedUsername.isEmpty ? nil : trimmedUsername
+            }(),
             port: {
                 let trimmedPort = draft.portText.trimmingCharacters(in: .whitespacesAndNewlines)
                 return trimmedPort.isEmpty ? nil : Int(trimmedPort)
