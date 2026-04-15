@@ -1,0 +1,5 @@
+.build
+.swiftpm
+DerivedData
+target
+.DS_Store
