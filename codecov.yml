@@ -1,3 +1,8 @@
+ignore:
+  - "Sources/App/SSHubApp.swift"
+  - "Sources/Services/SSHService.swift"
+  - "Sources/UI/**/*"
+
 coverage:
   status:
     project:

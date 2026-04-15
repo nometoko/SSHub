@@ -1,13 +1,36 @@
 import Foundation
 
 struct HostStore {
-    private let fileManager = FileManager.default
-    private let encoder: JSONEncoder = {
+    typealias AppSupportDirectoryAction = () throws -> URL
+
+    private let fileManager: FileManager
+    private let encoder: JSONEncoder
+    private let decoder: JSONDecoder
+    private let appSupportDirectoryAction: AppSupportDirectoryAction
+
+    init(
+        fileManager: FileManager = .default,
+        encoder: JSONEncoder = HostStore.makeEncoder(),
+        decoder: JSONDecoder = JSONDecoder(),
+        appSupportDirectoryAction: AppSupportDirectoryAction? = nil
+    ) {
+        self.fileManager = fileManager
+        self.encoder = encoder
+        self.decoder = decoder
+        self.appSupportDirectoryAction = appSupportDirectoryAction ?? {
+            guard let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
+                throw HostStoreError.appSupportDirectoryUnavailable
+            }
+
+            return baseURL.appendingPathComponent("SSHub", isDirectory: true)
+        }
+    }
+
+    private static func makeEncoder() -> JSONEncoder {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         return encoder
-    }()
-    private let decoder = JSONDecoder()
+    }
 
     func loadHosts() throws -> [Host] {
         let url = try hostsFileURL()
@@ -44,11 +67,7 @@ struct HostStore {
     }
 
     private func appSupportDirectory() throws -> URL {
-        guard let baseURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else {
-            throw HostStoreError.appSupportDirectoryUnavailable
-        }
-
-        return baseURL.appendingPathComponent("SSHub", isDirectory: true)
+        try appSupportDirectoryAction()
     }
 }
 
