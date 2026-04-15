@@ -235,6 +235,10 @@ enum JobStatus: String, Codable, CaseIterable, Hashable {
 }
 
 extension Job {
+    func isHostAvailable(in hosts: [Host]) -> Bool {
+        hosts.contains(where: { $0.id == hostID })
+    }
+
     var runtimeSummary: String {
         let components = startedAt.formatted(date: .abbreviated, time: .shortened)
         return "Started: \(components)"
@@ -279,7 +283,19 @@ struct JobDraft {
             return hostID
         }
 
-        return hosts.first?.id
+        if hostID == nil {
+            return hosts.first?.id
+        }
+
+        return hostID
+    }
+
+    func selectedHostExists(in hosts: [Host]) -> Bool {
+        guard let hostID else {
+            return false
+        }
+
+        return hosts.contains(where: { $0.id == hostID })
     }
 }
 

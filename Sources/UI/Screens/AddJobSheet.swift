@@ -7,18 +7,21 @@ struct AddJobSheet: View {
     let title: String
     let saveButtonTitle: String
     let hosts: [Host]
-    let onSave: (JobDraft) -> Void
+    let missingHostName: String?
+    let onSave: (JobDraft) -> Bool
 
     init(
         title: String = "Launch Job",
         saveButtonTitle: String = "Launch",
         hosts: [Host],
         initialDraft: JobDraft? = nil,
-        onSave: @escaping (JobDraft) -> Void
+        missingHostName: String? = nil,
+        onSave: @escaping (JobDraft) -> Bool
     ) {
         self.title = title
         self.saveButtonTitle = saveButtonTitle
         self.hosts = hosts
+        self.missingHostName = missingHostName
         self.onSave = onSave
 
         let fallbackHostID = hosts.first?.id
@@ -33,14 +36,22 @@ struct AddJobSheet: View {
                 Section("Job Info") {
                     TextField("Job name", text: $draft.name)
 
-                    Picker("Host", selection: Binding(
-                        get: { draft.hostID ?? hosts.first?.id },
-                        set: { draft.hostID = $0 }
-                    )) {
+                    Picker("Host", selection: Binding(get: { draft.hostID }, set: { draft.hostID = $0 })) {
+                        if let missingHostID = draft.hostID, !draft.selectedHostExists(in: hosts) {
+                            Text(missingHostLabel)
+                                .tag(Optional(missingHostID))
+                        }
+
                         ForEach(hosts) { host in
                             Text(host.name)
                                 .tag(Optional(host.id))
                         }
+                    }
+
+                    if let staleHostMessage {
+                        Text(staleHostMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
                     }
 
                     TextField("Working directory (optional)", text: $draft.workingDirectory)
@@ -59,8 +70,9 @@ struct AddJobSheet: View {
 
                 ToolbarItem(placement: .confirmationAction) {
                     Button(saveButtonTitle) {
-                        onSave(draft)
-                        dismiss()
+                        if onSave(draft) {
+                            dismiss()
+                        }
                     }
                     .disabled(!draft.isValid)
                 }
@@ -68,8 +80,24 @@ struct AddJobSheet: View {
         }
         .frame(minWidth: 480, minHeight: 320)
     }
+
+    private var staleHostMessage: String? {
+        guard draft.hostID != nil, !draft.selectedHostExists(in: hosts) else {
+            return nil
+        }
+
+        return "The previously selected host was removed. Choose an existing host before saving."
+    }
+
+    private var missingHostLabel: String {
+        if let missingHostName, !missingHostName.isEmpty {
+            return "\(missingHostName) (removed)"
+        }
+
+        return "Removed host"
+    }
 }
 
 #Preview {
-    AddJobSheet(hosts: Host.sampleData) { _ in }
+    AddJobSheet(hosts: Host.sampleData) { _ in true }
 }

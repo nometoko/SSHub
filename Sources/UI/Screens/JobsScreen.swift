@@ -13,8 +13,15 @@ struct JobsScreen: View {
             VStack(alignment: .leading, spacing: 20) {
                 filtersSection
 
+                if let jobErrorMessage = appModel.jobErrorMessage {
+                    Text(jobErrorMessage)
+                        .font(.subheadline)
+                        .foregroundStyle(.red)
+                }
+
                 JobDashboardView(
                     jobs: filteredJobs,
+                    hosts: appModel.hosts,
                     headerTitle: "Job Management",
                     headerSubtitle: "Jobs",
                     buttonTitle: "Launch Job",
@@ -33,6 +40,7 @@ struct JobsScreen: View {
         .sheet(isPresented: $isPresentingAddJobSheet) {
             AddJobSheet(hosts: appModel.hosts) { draft in
                 appModel.addJob(from: draft)
+                return appModel.jobErrorMessage == nil
             }
         }
         .sheet(item: $editingJob) { job in
@@ -40,9 +48,11 @@ struct JobsScreen: View {
                 title: "Edit Job",
                 saveButtonTitle: "Save",
                 hosts: appModel.hosts,
-                initialDraft: job.makeDraft()
+                initialDraft: job.makeDraft(),
+                missingHostName: job.hostName
             ) { draft in
                 appModel.updateJob(job, from: draft)
+                return appModel.jobErrorMessage == nil
             }
         }
     }

@@ -13,6 +13,7 @@ final class AppModel: ObservableObject {
     @Published var backendStatus: String = "macOS native skeleton ready"
     @Published var notificationSettings = NotificationSettings.sample
     @Published var hostErrorMessage: String?
+    @Published var jobErrorMessage: String?
 
     private let loadHostsAction: LoadHostsAction
     private let saveHostsAction: SaveHostsAction
@@ -77,6 +78,25 @@ final class AppModel: ObservableObject {
     }
 
     func deleteHosts(at offsets: IndexSet) {
+        let blockedHostNames = offsets.compactMap { index -> String? in
+            guard hosts.indices.contains(index) else {
+                return nil
+            }
+
+            let host = hosts[index]
+            return hasRunningJob(for: host.id) ? host.name : nil
+        }
+
+        if !blockedHostNames.isEmpty {
+            if blockedHostNames.count == 1, let hostName = blockedHostNames.first {
+                hostErrorMessage = "Stop running jobs on \(hostName) before removing this host."
+            } else {
+                hostErrorMessage = "Stop running jobs on the selected hosts before removing them."
+            }
+            return
+        }
+
+        hostErrorMessage = nil
         hosts.remove(atOffsets: offsets)
         persistHosts()
     }
@@ -98,8 +118,11 @@ final class AppModel: ObservableObject {
             let hostID = draft.hostID,
             let host = hosts.first(where: { $0.id == hostID })
         else {
+            jobErrorMessage = "Select an existing host before launching the job."
             return
         }
+
+        jobErrorMessage = nil
 
         let trimmedWorkingDirectory = draft.workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
         let job = Job(
@@ -127,8 +150,11 @@ final class AppModel: ObservableObject {
             let hostID = draft.hostID,
             let host = hosts.first(where: { $0.id == hostID })
         else {
+            jobErrorMessage = "Select an existing host before saving the job."
             return
         }
+
+        jobErrorMessage = nil
 
         let currentJob = jobs[index]
         let trimmedWorkingDirectory = draft.workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -300,5 +326,9 @@ final class AppModel: ObservableObject {
             workingDirectory: job.workingDirectory,
             pid: job.pid
         )
+    }
+
+    private func hasRunningJob(for hostID: UUID) -> Bool {
+        jobs.contains(where: { $0.hostID == hostID && $0.status == .running })
     }
 }

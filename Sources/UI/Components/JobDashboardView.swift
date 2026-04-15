@@ -2,6 +2,7 @@ import SwiftUI
 
 struct JobDashboardView: View {
     let jobs: [Job]
+    let hosts: [Host]
     var headerTitle: String = "Job Dashboard"
     var headerSubtitle: String = "Jobs"
     var buttonTitle: String = "Launch Job"
@@ -38,7 +39,7 @@ struct JobDashboardView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(job.name)
                                     .font(.headline)
-                                Text(job.hostName)
+                                Text(hostSummary(for: job))
                                     .foregroundStyle(.secondary)
                             }
 
@@ -63,6 +64,10 @@ struct JobDashboardView: View {
                         Text(job.progressSummary)
                             .font(.body)
 
+                        if !job.isHostAvailable(in: hosts) {
+                            orphanedHostWarning
+                        }
+
                         Text(job.command)
                             .font(.system(.footnote, design: .monospaced))
                             .foregroundStyle(.secondary)
@@ -80,12 +85,14 @@ struct JobDashboardView: View {
                                     Button("Stop") {
                                         onStop(job)
                                     }
+                                    .disabled(!job.isHostAvailable(in: hosts))
                                 }
 
                                 if job.status != .running, let onRestart {
                                     Button("Restart") {
                                         onRestart(job)
                                     }
+                                    .disabled(!job.isHostAvailable(in: hosts))
                                 }
 
                                 if let onDelete {
@@ -111,6 +118,43 @@ struct JobDashboardView: View {
         onEdit != nil || onStop != nil || onRestart != nil || onDelete != nil
     }
 
+    private var orphanedHostWarning: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.headline)
+                .foregroundStyle(.orange)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Host Removed")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text("This job still exists as history, but its host has been removed.")
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.orange.opacity(0.16))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.orange.opacity(0.45), lineWidth: 1)
+        )
+    }
+
+    private func hostSummary(for job: Job) -> String {
+        guard !job.isHostAvailable(in: hosts) else {
+            return job.hostName
+        }
+
+        return "\(job.hostName) (removed)"
+    }
+
     private func tint(for status: JobStatus) -> Color {
         switch status {
         case .running:
@@ -130,6 +174,6 @@ struct JobDashboardView: View {
 }
 
 #Preview {
-    JobDashboardView(jobs: Job.sampleData)
+    JobDashboardView(jobs: Job.sampleData, hosts: Host.sampleData)
         .padding()
 }

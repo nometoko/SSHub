@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 @testable import SSHub
 
+// swiftlint:disable type_body_length
 final class AppModelTests: XCTestCase {
     func testLoadHostsWithNoHostsSetsNoHostsBackendStatus() async {
         let model = await MainActor.run {
@@ -227,11 +228,29 @@ final class AppModelTests: XCTestCase {
 
         await MainActor.run {
             model.hosts = [primaryHost, secondaryHost]
+            model.jobs = [
+                Job(
+                    id: UUID(),
+                    name: "train-resnet50",
+                    hostID: primaryHost.id,
+                    hostName: primaryHost.name,
+                    status: .failed,
+                    progressSummary: "Launching...",
+                    startedAt: Date(timeIntervalSince1970: 100),
+                    command: "python train.py",
+                    workingDirectory: nil,
+                    pid: 12345
+                )
+            ]
             model.deleteHost(staleCopy)
         }
 
-        let remainingHosts = await MainActor.run { model.hosts }
+        let state = await MainActor.run { (model.hosts, model.jobs) }
+
+        let remainingHosts = state.0
         XCTAssertEqual(remainingHosts, [secondaryHost])
+        XCTAssertEqual(state.1.first?.hostID, primaryHost.id)
+        XCTAssertEqual(state.1.first?.hostName, primaryHost.name)
     }
 
     func testLoadHostsFailureSurfacesError() async {
@@ -478,6 +497,37 @@ final class AppModelTests: XCTestCase {
         XCTAssertNotNil(job?.pid)
     }
 
+    func testAddJobWithMissingHostKeepsStateAndSetsError() async {
+        let model = await MainActor.run {
+            AppModel(
+                loadHostsAction: { [] },
+                saveHostsAction: { _ in },
+                storageDirectoryDescriptionAction: { "/tmp/SSHub" },
+                connectivityCheckAction: { _ in "ok" }
+            )
+        }
+
+        await MainActor.run {
+            model.hosts = []
+            model.jobs = []
+        }
+
+        let draft = JobDraft(
+            name: "train-resnet50",
+            hostID: UUID(),
+            command: "python train.py",
+            workingDirectory: ""
+        )
+
+        await MainActor.run {
+            model.addJob(from: draft)
+        }
+
+        let state = await MainActor.run { (model.jobs, model.jobErrorMessage) }
+        XCTAssertTrue(state.0.isEmpty)
+        XCTAssertEqual(state.1, "Select an existing host before launching the job.")
+    }
+
     func testUpdateJobMatchesByIdentifierAndPreservesRuntimeFields() async {
         let model = await MainActor.run {
             AppModel(
@@ -563,6 +613,155 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(updatedJob?.pid, 43210)
     }
 
+    func testUpdateJobWithMissingHostLeavesJobUnchangedAndSetsError() async {
+        let model = await MainActor.run {
+            AppModel(
+                loadHostsAction: { [] },
+                saveHostsAction: { _ in },
+                storageDirectoryDescriptionAction: { "/tmp/SSHub" },
+                connectivityCheckAction: { _ in "ok" }
+            )
+        }
+        let host = Host(
+            id: UUID(),
+            name: "gpu-01",
+            hostAlias: "gpu-01",
+            username: nil,
+            port: nil,
+            status: .reachable,
+            statusMessage: nil,
+            lastCheckedAt: nil
+        )
+        let job = Job(
+            id: UUID(),
+            name: "train-resnet50",
+            hostID: host.id,
+            hostName: host.name,
+            status: .failed,
+            progressSummary: "stderr tail available",
+            startedAt: Date(timeIntervalSince1970: 1234),
+            command: "python train.py",
+            workingDirectory: nil,
+            pid: 43210
+        )
+        let draft = JobDraft(
+            name: "updated-job",
+            hostID: UUID(),
+            command: "./run.sh --resume",
+            workingDirectory: "/tmp/run"
+        )
+
+        await MainActor.run {
+            model.hosts = [host]
+            model.jobs = [job]
+            model.updateJob(job, from: draft)
+        }
+
+        let state = await MainActor.run { (model.jobs.first, model.jobErrorMessage) }
+        XCTAssertEqual(state.0, job)
+        XCTAssertEqual(state.1, "Select an existing host before saving the job.")
+    }
+
+    func testDeleteHostWithRunningJobIsBlocked() async {
+        let model = await MainActor.run {
+            AppModel(
+                loadHostsAction: { [] },
+                saveHostsAction: { _ in },
+                storageDirectoryDescriptionAction: { "/tmp/SSHub" },
+                connectivityCheckAction: { _ in "ok" }
+            )
+        }
+        let host = Host(
+            id: UUID(),
+            name: "gpu-01",
+            hostAlias: "gpu-01",
+            username: nil,
+            port: nil,
+            status: .reachable,
+            statusMessage: nil,
+            lastCheckedAt: nil
+        )
+        let runningJob = Job(
+            id: UUID(),
+            name: "train-resnet50",
+            hostID: host.id,
+            hostName: host.name,
+            status: .running,
+            progressSummary: "Launching...",
+            startedAt: Date(timeIntervalSince1970: 100),
+            command: "python train.py",
+            workingDirectory: nil,
+            pid: 12345
+        )
+
+        await MainActor.run {
+            model.hosts = [host]
+            model.jobs = [runningJob]
+            model.deleteHost(host)
+        }
+
+        let state = await MainActor.run { (model.hosts, model.hostErrorMessage) }
+        XCTAssertEqual(state.0, [host])
+        XCTAssertEqual(state.1, "Stop running jobs on gpu-01 before removing this host.")
+    }
+
+    func testDeleteHostsWithRunningJobIsBlocked() async {
+        let recorder = SaveRecorder()
+        let model = await MainActor.run {
+            AppModel(
+                loadHostsAction: { [] },
+                saveHostsAction: recorder.save(hosts:),
+                storageDirectoryDescriptionAction: { "/tmp/SSHub" },
+                connectivityCheckAction: { _ in "ok" }
+            )
+        }
+        let hosts = [
+            Host(
+                id: UUID(),
+                name: "gpu-01",
+                hostAlias: "gpu-01",
+                username: nil,
+                port: nil,
+                status: .unknown,
+                statusMessage: nil,
+                lastCheckedAt: nil
+            ),
+            Host(
+                id: UUID(),
+                name: "gpu-02",
+                hostAlias: "gpu-02",
+                username: nil,
+                port: nil,
+                status: .unknown,
+                statusMessage: nil,
+                lastCheckedAt: nil
+            )
+        ]
+        let runningJob = Job(
+            id: UUID(),
+            name: "train-resnet50",
+            hostID: hosts[0].id,
+            hostName: hosts[0].name,
+            status: .running,
+            progressSummary: "Launching...",
+            startedAt: Date(timeIntervalSince1970: 100),
+            command: "python train.py",
+            workingDirectory: nil,
+            pid: 12345
+        )
+
+        await MainActor.run {
+            model.hosts = hosts
+            model.jobs = [runningJob]
+            model.deleteHosts(at: IndexSet(integer: 0))
+        }
+
+        let state = await MainActor.run { (model.hosts, model.hostErrorMessage) }
+        XCTAssertEqual(state.0, hosts)
+        XCTAssertEqual(state.1, "Stop running jobs on gpu-01 before removing this host.")
+        XCTAssertTrue(recorder.snapshots().isEmpty)
+    }
+
     func testJobStatusActionsAndDeleteOperateByIdentifier() async {
         let model = await MainActor.run {
             AppModel(
@@ -639,6 +838,7 @@ final class AppModelTests: XCTestCase {
         XCTFail("Condition was not met before timeout")
     }
 }
+// swiftlint:enable type_body_length
 
 private enum TestError: LocalizedError {
     case sample

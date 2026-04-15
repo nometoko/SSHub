@@ -172,8 +172,27 @@ final class HostModelTests: XCTestCase {
         )
         let staleDraft = JobDraft(hostID: UUID())
 
-        XCTAssertEqual(staleDraft.normalizedHostID(in: [fallbackHost]), fallbackHost.id)
+        XCTAssertEqual(staleDraft.normalizedHostID(in: [fallbackHost]), staleDraft.hostID)
         XCTAssertNil(staleDraft.normalizedHostID(in: []))
+    }
+
+    func testJobDraftSelectedHostExistsChecksCurrentHosts() {
+        let host = Host(
+            id: UUID(),
+            name: "gpu-01",
+            hostAlias: "gpu-01",
+            username: nil,
+            port: nil,
+            status: .unknown,
+            statusMessage: nil,
+            lastCheckedAt: nil
+        )
+        let draft = JobDraft(hostID: host.id)
+        let staleDraft = JobDraft(hostID: UUID())
+
+        XCTAssertTrue(draft.selectedHostExists(in: [host]))
+        XCTAssertFalse(staleDraft.selectedHostExists(in: [host]))
+        XCTAssertFalse(JobDraft().selectedHostExists(in: [host]))
     }
 
     func testJobMakeDraftRestoresEditableFields() {
@@ -197,5 +216,45 @@ final class HostModelTests: XCTestCase {
         XCTAssertEqual(draft.hostID, hostID)
         XCTAssertEqual(draft.command, "python train.py")
         XCTAssertEqual(draft.workingDirectory, "~/project")
+    }
+
+    func testJobIsHostAvailableMatchesByIdentifier() {
+        let host = Host(
+            id: UUID(),
+            name: "gpu-01",
+            hostAlias: "gpu-01",
+            username: nil,
+            port: nil,
+            status: .unknown,
+            statusMessage: nil,
+            lastCheckedAt: nil
+        )
+        let job = Job(
+            id: UUID(),
+            name: "train-resnet50",
+            hostID: host.id,
+            hostName: host.name,
+            status: .running,
+            progressSummary: "Epoch 2/10",
+            startedAt: Date(timeIntervalSince1970: 100),
+            command: "python train.py",
+            workingDirectory: nil,
+            pid: 12345
+        )
+        let orphanedJob = Job(
+            id: UUID(),
+            name: "train-resnet50",
+            hostID: UUID(),
+            hostName: "removed-host",
+            status: .running,
+            progressSummary: "Epoch 2/10",
+            startedAt: Date(timeIntervalSince1970: 100),
+            command: "python train.py",
+            workingDirectory: nil,
+            pid: 12345
+        )
+
+        XCTAssertTrue(job.isHostAvailable(in: [host]))
+        XCTAssertFalse(orphanedJob.isHostAvailable(in: [host]))
     }
 }

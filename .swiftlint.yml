@@ -29,8 +29,8 @@ function_body_length:
   error: 120
 
 type_body_length:
-  warning: 300
-  error: 400
+  warning: 800
+  error: 950
 
 identifier_name:
   min_length:

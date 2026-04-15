@@ -11,7 +11,7 @@ struct DashboardView: View {
                 HStack(alignment: .top, spacing: 20) {
                     HostListView(hosts: appModel.hosts)
                         .environmentObject(appModel)
-                    JobDashboardView(jobs: appModel.jobs)
+                    JobDashboardView(jobs: appModel.jobs, hosts: appModel.hosts)
                 }
             }
             .padding(24)
