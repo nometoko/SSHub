@@ -7,26 +7,33 @@ struct AddJobSheet: View {
     let title: String
     let saveButtonTitle: String
     let hosts: [Host]
+    let sessions: [TmuxSession]
     let missingHostName: String?
+    let missingSessionName: String?
     let onSave: (JobDraft) -> Bool
 
     init(
         title: String = "Launch Job",
         saveButtonTitle: String = "Launch",
         hosts: [Host],
+        sessions: [TmuxSession],
         initialDraft: JobDraft? = nil,
         missingHostName: String? = nil,
+        missingSessionName: String? = nil,
         onSave: @escaping (JobDraft) -> Bool
     ) {
         self.title = title
         self.saveButtonTitle = saveButtonTitle
         self.hosts = hosts
+        self.sessions = sessions
         self.missingHostName = missingHostName
+        self.missingSessionName = missingSessionName
         self.onSave = onSave
 
         let fallbackHostID = hosts.first?.id
         var draft = initialDraft ?? JobDraft(hostID: fallbackHostID)
         draft.hostID = draft.normalizedHostID(in: hosts)
+        draft.sessionID = draft.normalizedSessionID(in: draft.availableSessions(in: sessions))
         _draft = State(initialValue: draft)
     }
 
@@ -54,6 +61,24 @@ struct AddJobSheet: View {
                             .foregroundStyle(.orange)
                     }
 
+                    Picker("Tmux session", selection: Binding(get: { draft.sessionID }, set: { draft.sessionID = $0 })) {
+                        if let missingSessionID = draft.sessionID, !draft.selectedSessionExists(in: availableSessions) {
+                            Text(missingSessionLabel)
+                                .tag(Optional(missingSessionID))
+                        }
+
+                        ForEach(availableSessions) { session in
+                            Text(session.name)
+                                .tag(Optional(session.id))
+                        }
+                    }
+
+                    if let staleSessionMessage {
+                        Text(staleSessionMessage)
+                            .font(.footnote)
+                            .foregroundStyle(.orange)
+                    }
+
                     TextField("Working directory (optional)", text: $draft.workingDirectory)
                     TextField("Command", text: $draft.command, axis: .vertical)
                         .lineLimit(3...6)
@@ -61,6 +86,10 @@ struct AddJobSheet: View {
             }
             .formStyle(.grouped)
             .navigationTitle(title)
+            .onChange(of: draft.hostID) { _, newHostID in
+                let sessionsForHost = sessions.filter { $0.hostID == newHostID }
+                draft.sessionID = draft.normalizedSessionID(in: sessionsForHost)
+            }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") {
@@ -89,6 +118,22 @@ struct AddJobSheet: View {
         return "The previously selected host was removed. Choose an existing host before saving."
     }
 
+    private var availableSessions: [TmuxSession] {
+        draft.availableSessions(in: sessions)
+    }
+
+    private var staleSessionMessage: String? {
+        guard draft.sessionID != nil, !draft.selectedSessionExists(in: availableSessions) else {
+            return nil
+        }
+
+        if availableSessions.isEmpty {
+            return "No tmux session exists for this host yet. Create one before launching the job."
+        }
+
+        return "The previously selected tmux session is no longer available for this host."
+    }
+
     private var missingHostLabel: String {
         if let missingHostName, !missingHostName.isEmpty {
             return "\(missingHostName) (removed)"
@@ -96,8 +141,16 @@ struct AddJobSheet: View {
 
         return "Removed host"
     }
+
+    private var missingSessionLabel: String {
+        if let missingSessionName, !missingSessionName.isEmpty {
+            return "\(missingSessionName) (removed)"
+        }
+
+        return "Removed session"
+    }
 }
 
 #Preview {
-    AddJobSheet(hosts: Host.sampleData) { _ in true }
+    AddJobSheet(hosts: Host.sampleData, sessions: TmuxSession.sampleData) { _ in true }
 }

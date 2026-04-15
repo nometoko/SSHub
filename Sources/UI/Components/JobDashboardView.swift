@@ -3,6 +3,7 @@ import SwiftUI
 struct JobDashboardView: View {
     let jobs: [Job]
     let hosts: [Host]
+    let sessions: [TmuxSession]
     var headerTitle: String = "Job Dashboard"
     var headerSubtitle: String = "Jobs"
     var buttonTitle: String = "Launch Job"
@@ -39,7 +40,7 @@ struct JobDashboardView: View {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(job.name)
                                     .font(.headline)
-                                Text(hostSummary(for: job))
+                                Text(locationSummary(for: job))
                                     .foregroundStyle(.secondary)
                             }
 
@@ -66,6 +67,8 @@ struct JobDashboardView: View {
 
                         if !job.isHostAvailable(in: hosts) {
                             orphanedHostWarning
+                        } else if !job.isSessionAvailable(in: sessions) {
+                            orphanedSessionWarning
                         }
 
                         Text(job.command)
@@ -85,14 +88,14 @@ struct JobDashboardView: View {
                                     Button("Stop") {
                                         onStop(job)
                                     }
-                                    .disabled(!job.isHostAvailable(in: hosts))
+                                    .disabled(!job.isHostAvailable(in: hosts) || !job.isSessionAvailable(in: sessions))
                                 }
 
                                 if job.status != .running, let onRestart {
                                     Button("Restart") {
                                         onRestart(job)
                                     }
-                                    .disabled(!job.isHostAvailable(in: hosts))
+                                    .disabled(!job.isHostAvailable(in: hosts) || !job.isSessionAvailable(in: sessions))
                                 }
 
                                 if let onDelete {
@@ -147,12 +150,51 @@ struct JobDashboardView: View {
         )
     }
 
-    private func hostSummary(for job: Job) -> String {
+    private var orphanedSessionWarning: some View {
+        HStack(alignment: .top, spacing: 12) {
+            Image(systemName: "rectangle.split.3x1.fill")
+                .font(.headline)
+                .foregroundStyle(.orange)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Session Removed")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.primary)
+
+                Text("This job remains as history, but its tmux session has been removed.")
+                    .font(.footnote)
+                    .foregroundStyle(.primary)
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .fill(Color.orange.opacity(0.16))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .stroke(Color.orange.opacity(0.45), lineWidth: 1)
+        )
+    }
+
+    private func locationSummary(for job: Job) -> String {
+        let hostLabel: String
         if let host = hosts.first(where: { $0.id == job.hostID }) {
-            return host.name
+            hostLabel = host.name
+        } else {
+            hostLabel = "\(job.hostName) (removed)"
         }
 
-        return "\(job.hostName) (removed)"
+        let sessionLabel: String
+        if let session = sessions.first(where: { $0.id == job.sessionID }) {
+            sessionLabel = session.name
+        } else {
+            sessionLabel = "\(job.sessionName) (removed)"
+        }
+
+        return "\(hostLabel) / \(sessionLabel)"
     }
 
     private func tint(for status: JobStatus) -> Color {
@@ -174,6 +216,6 @@ struct JobDashboardView: View {
 }
 
 #Preview {
-    JobDashboardView(jobs: Job.sampleData, hosts: Host.sampleData)
+    JobDashboardView(jobs: Job.sampleData, hosts: Host.sampleData, sessions: TmuxSession.sampleData)
         .padding()
 }

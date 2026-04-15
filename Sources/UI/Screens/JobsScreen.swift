@@ -2,11 +2,14 @@ import SwiftUI
 
 struct JobsScreen: View {
     @EnvironmentObject private var appModel: AppModel
+    @State private var isPresentingAddSessionSheet = false
     @State private var isPresentingAddJobSheet = false
+    @State private var editingSession: TmuxSession?
     @State private var editingJob: Job?
     @State private var searchText = ""
     @State private var selectedStatus: JobStatus?
     @State private var selectedHostID: UUID?
+    @State private var selectedSessionID: UUID?
 
     var body: some View {
         ScrollView {
@@ -19,9 +22,19 @@ struct JobsScreen: View {
                         .foregroundStyle(.red)
                 }
 
+                SessionDashboardView(
+                    sessions: filteredSessions,
+                    hosts: appModel.hosts,
+                    jobs: appModel.jobs,
+                    onAdd: { isPresentingAddSessionSheet = true },
+                    onEdit: { editingSession = $0 },
+                    onDelete: appModel.deleteSession(_:)
+                )
+
                 JobDashboardView(
                     jobs: filteredJobs,
                     hosts: appModel.hosts,
+                    sessions: appModel.sessions,
                     headerTitle: "Job Management",
                     headerSubtitle: "Jobs",
                     buttonTitle: "Launch Job",
@@ -37,9 +50,27 @@ struct JobsScreen: View {
             .padding(24)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .sheet(isPresented: $isPresentingAddSessionSheet) {
+            AddSessionSheet(hosts: appModel.hosts) { draft in
+                appModel.addSession(from: draft)
+                return appModel.jobErrorMessage == nil
+            }
+        }
         .sheet(isPresented: $isPresentingAddJobSheet) {
-            AddJobSheet(hosts: appModel.hosts) { draft in
+            AddJobSheet(hosts: appModel.hosts, sessions: appModel.sessions) { draft in
                 appModel.addJob(from: draft)
+                return appModel.jobErrorMessage == nil
+            }
+        }
+        .sheet(item: $editingSession) { session in
+            AddSessionSheet(
+                title: "Edit Session",
+                saveButtonTitle: "Save",
+                hosts: appModel.hosts,
+                initialDraft: session.makeDraft(),
+                missingHostName: session.hostName
+            ) { draft in
+                appModel.updateSession(session, from: draft)
                 return appModel.jobErrorMessage == nil
             }
         }
@@ -48,8 +79,10 @@ struct JobsScreen: View {
                 title: "Edit Job",
                 saveButtonTitle: "Save",
                 hosts: appModel.hosts,
+                sessions: appModel.sessions,
                 initialDraft: job.makeDraft(),
-                missingHostName: job.hostName
+                missingHostName: job.hostName,
+                missingSessionName: job.sessionName
             ) { draft in
                 appModel.updateJob(job, from: draft)
                 return appModel.jobErrorMessage == nil
@@ -57,11 +90,19 @@ struct JobsScreen: View {
         }
     }
 
+    private var filteredSessions: [TmuxSession] {
+        appModel.sessions.filter { session in
+            matchesSessionSearch(session) &&
+            matchesSessionHost(session)
+        }
+    }
+
     private var filteredJobs: [Job] {
         appModel.jobs.filter { job in
             matchesSearch(job) &&
             matchesStatus(job) &&
-            matchesHost(job)
+            matchesHost(job) &&
+            matchesSession(job)
         }
     }
 
@@ -90,9 +131,28 @@ struct JobsScreen: View {
                     }
                 }
                 .frame(width: 180)
+
+                Picker("Session", selection: $selectedSessionID) {
+                    Text("All sessions").tag(Optional<UUID>.none)
+                    ForEach(filteredSessionOptions) { session in
+                        Text(session.name).tag(Optional(session.id))
+                    }
+                }
+                .frame(width: 180)
             }
         }
         .panelStyle()
+        .onChange(of: selectedHostID) { _, newHostID in
+            guard
+                let selectedSessionID,
+                let newHostID,
+                !appModel.sessions.contains(where: { $0.id == selectedSessionID && $0.hostID == newHostID })
+            else {
+                return
+            }
+
+            self.selectedSessionID = nil
+        }
     }
 
     private var emptyStateTitle: String {
@@ -132,6 +192,44 @@ struct JobsScreen: View {
         }
 
         return job.hostID == selectedHostID
+    }
+
+    private func matchesSession(_ job: Job) -> Bool {
+        guard let selectedSessionID else {
+            return true
+        }
+
+        return job.sessionID == selectedSessionID
+    }
+
+    private func matchesSessionSearch(_ session: TmuxSession) -> Bool {
+        let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedQuery.isEmpty else {
+            return true
+        }
+
+        let query = trimmedQuery.lowercased()
+        return session.name.lowercased().contains(query)
+            || session.hostName.lowercased().contains(query)
+            || (session.workingDirectory?.lowercased().contains(query) ?? false)
+    }
+
+    private func matchesSessionHost(_ session: TmuxSession) -> Bool {
+        guard let selectedHostID else {
+            return true
+        }
+
+        return session.hostID == selectedHostID
+    }
+
+    private var filteredSessionOptions: [TmuxSession] {
+        appModel.sessions.filter { session in
+            guard let selectedHostID else {
+                return true
+            }
+
+            return session.hostID == selectedHostID
+        }
     }
 }
 

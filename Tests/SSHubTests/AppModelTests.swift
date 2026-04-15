@@ -2,7 +2,7 @@ import Foundation
 import XCTest
 @testable import SSHub
 
-// swiftlint:disable type_body_length
+// swiftlint:disable type_body_length file_length function_body_length
 final class AppModelTests: XCTestCase {
     func testLoadHostsWithNoHostsSetsNoHostsBackendStatus() async {
         let model = await MainActor.run {
@@ -472,12 +472,14 @@ final class AppModelTests: XCTestCase {
 
         await MainActor.run {
             model.hosts = [host]
+            model.sessions = [makeSession(for: host, name: "vision-lab")]
             model.jobs = []
         }
 
         var draft = JobDraft()
         draft.name = " train-resnet50 "
         draft.hostID = host.id
+        draft.sessionID = host.id
         draft.command = " python train.py "
         draft.workingDirectory = " ~/workspace "
         let addDraft = draft
@@ -490,6 +492,8 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(job?.name, "train-resnet50")
         XCTAssertEqual(job?.hostID, host.id)
         XCTAssertEqual(job?.hostName, "gpu-01")
+        XCTAssertEqual(job?.sessionID, host.id)
+        XCTAssertEqual(job?.sessionName, "vision-lab")
         XCTAssertEqual(job?.command, "python train.py")
         XCTAssertEqual(job?.workingDirectory, "~/workspace")
         XCTAssertEqual(job?.status, .running)
@@ -515,6 +519,7 @@ final class AppModelTests: XCTestCase {
         let draft = JobDraft(
             name: "train-resnet50",
             hostID: UUID(),
+            sessionID: UUID(),
             command: "python train.py",
             workingDirectory: ""
         )
@@ -525,7 +530,7 @@ final class AppModelTests: XCTestCase {
 
         let state = await MainActor.run { (model.jobs, model.jobErrorMessage) }
         XCTAssertTrue(state.0.isEmpty)
-        XCTAssertEqual(state.1, "Select an existing host before launching the job.")
+        XCTAssertEqual(state.1, "Select an existing host and tmux session before launching the job.")
     }
 
     func testUpdateJobMatchesByIdentifierAndPreservesRuntimeFields() async {
@@ -557,6 +562,8 @@ final class AppModelTests: XCTestCase {
             statusMessage: nil,
             lastCheckedAt: nil
         )
+        let originalSession = makeSession(for: originalHost, id: UUID(), name: "vision-lab")
+        let replacementSession = makeSession(for: replacementHost, id: UUID(), name: "resume-lab")
         let jobID = UUID()
         let startedAt = Date(timeIntervalSince1970: 1234)
         let job = Job(
@@ -564,6 +571,8 @@ final class AppModelTests: XCTestCase {
             name: "train-resnet50",
             hostID: originalHost.id,
             hostName: originalHost.name,
+            sessionID: originalSession.id,
+            sessionName: originalSession.name,
             status: .failed,
             progressSummary: "stderr tail available",
             startedAt: startedAt,
@@ -576,6 +585,8 @@ final class AppModelTests: XCTestCase {
             name: "outdated",
             hostID: originalHost.id,
             hostName: originalHost.name,
+            sessionID: originalSession.id,
+            sessionName: originalSession.name,
             status: .running,
             progressSummary: "running",
             startedAt: .now,
@@ -586,12 +597,14 @@ final class AppModelTests: XCTestCase {
 
         await MainActor.run {
             model.hosts = [originalHost, replacementHost]
+            model.sessions = [originalSession, replacementSession]
             model.jobs = [job]
         }
 
         var draft = JobDraft()
         draft.name = " updated-job "
         draft.hostID = replacementHost.id
+        draft.sessionID = replacementSession.id
         draft.command = " ./run.sh --resume "
         draft.workingDirectory = " /tmp/run "
         let updateDraft = draft
@@ -605,6 +618,8 @@ final class AppModelTests: XCTestCase {
         XCTAssertEqual(updatedJob?.name, "updated-job")
         XCTAssertEqual(updatedJob?.hostID, replacementHost.id)
         XCTAssertEqual(updatedJob?.hostName, "gpu-02")
+        XCTAssertEqual(updatedJob?.sessionID, replacementSession.id)
+        XCTAssertEqual(updatedJob?.sessionName, "resume-lab")
         XCTAssertEqual(updatedJob?.command, "./run.sh --resume")
         XCTAssertEqual(updatedJob?.workingDirectory, "/tmp/run")
         XCTAssertEqual(updatedJob?.status, .failed)
@@ -637,6 +652,8 @@ final class AppModelTests: XCTestCase {
             name: "train-resnet50",
             hostID: host.id,
             hostName: host.name,
+            sessionID: host.id,
+            sessionName: "vision-lab",
             status: .failed,
             progressSummary: "stderr tail available",
             startedAt: Date(timeIntervalSince1970: 1234),
@@ -647,19 +664,21 @@ final class AppModelTests: XCTestCase {
         let draft = JobDraft(
             name: "updated-job",
             hostID: UUID(),
+            sessionID: UUID(),
             command: "./run.sh --resume",
             workingDirectory: "/tmp/run"
         )
 
         await MainActor.run {
             model.hosts = [host]
+            model.sessions = [makeSession(for: host, name: "vision-lab")]
             model.jobs = [job]
             model.updateJob(job, from: draft)
         }
 
         let state = await MainActor.run { (model.jobs.first, model.jobErrorMessage) }
         XCTAssertEqual(state.0, job)
-        XCTAssertEqual(state.1, "Select an existing host before saving the job.")
+        XCTAssertEqual(state.1, "Select an existing host and tmux session before saving the job.")
     }
 
     func testDeleteHostWithRunningJobIsBlocked() async {
@@ -762,6 +781,88 @@ final class AppModelTests: XCTestCase {
         XCTAssertTrue(recorder.snapshots().isEmpty)
     }
 
+    func testAddSessionCreatesDetachedSessionForHost() async {
+        let model = await MainActor.run {
+            AppModel(
+                loadHostsAction: { [] },
+                saveHostsAction: { _ in },
+                storageDirectoryDescriptionAction: { "/tmp/SSHub" },
+                connectivityCheckAction: { _ in "ok" }
+            )
+        }
+        let host = Host(
+            id: UUID(),
+            name: "gpu-01",
+            hostAlias: "gpu-01",
+            username: nil,
+            port: nil,
+            status: .reachable,
+            statusMessage: nil,
+            lastCheckedAt: nil
+        )
+        let draft = TmuxSessionDraft(name: " vision-lab ", hostID: host.id, workingDirectory: " ~/workspace ")
+
+        await MainActor.run {
+            model.hosts = [host]
+            model.sessions = []
+            model.addSession(from: draft)
+        }
+
+        let session = await MainActor.run { model.sessions.first }
+        XCTAssertEqual(session?.name, "vision-lab")
+        XCTAssertEqual(session?.hostID, host.id)
+        XCTAssertEqual(session?.hostName, host.name)
+        XCTAssertEqual(session?.workingDirectory, "~/workspace")
+        XCTAssertEqual(session?.status, .detached)
+    }
+
+    func testDeleteSessionWithRunningJobIsBlocked() async {
+        let model = await MainActor.run {
+            AppModel(
+                loadHostsAction: { [] },
+                saveHostsAction: { _ in },
+                storageDirectoryDescriptionAction: { "/tmp/SSHub" },
+                connectivityCheckAction: { _ in "ok" }
+            )
+        }
+        let host = Host(
+            id: UUID(),
+            name: "gpu-01",
+            hostAlias: "gpu-01",
+            username: nil,
+            port: nil,
+            status: .reachable,
+            statusMessage: nil,
+            lastCheckedAt: nil
+        )
+        let session = makeSession(for: host, name: "vision-lab")
+        let runningJob = Job(
+            id: UUID(),
+            name: "train-resnet50",
+            hostID: host.id,
+            hostName: host.name,
+            sessionID: session.id,
+            sessionName: session.name,
+            status: .running,
+            progressSummary: "Launching...",
+            startedAt: Date(timeIntervalSince1970: 100),
+            command: "python train.py",
+            workingDirectory: nil,
+            pid: 12345
+        )
+
+        await MainActor.run {
+            model.hosts = [host]
+            model.sessions = [session]
+            model.jobs = [runningJob]
+            model.deleteSession(session)
+        }
+
+        let state = await MainActor.run { (model.sessions, model.jobErrorMessage) }
+        XCTAssertEqual(state.0, [session])
+        XCTAssertEqual(state.1, "Stop running jobs in vision-lab before removing the tmux session.")
+    }
+
     func testJobStatusActionsAndDeleteOperateByIdentifier() async {
         let model = await MainActor.run {
             AppModel(
@@ -777,6 +878,8 @@ final class AppModelTests: XCTestCase {
             name: "train-resnet50",
             hostID: UUID(),
             hostName: "gpu-01",
+            sessionID: UUID(),
+            sessionName: "vision-lab",
             status: .running,
             progressSummary: "Epoch 2/10",
             startedAt: Date(timeIntervalSince1970: 100),
@@ -789,6 +892,8 @@ final class AppModelTests: XCTestCase {
             name: "stale",
             hostID: UUID(),
             hostName: "gpu-01",
+            sessionID: job.sessionID,
+            sessionName: "vision-lab",
             status: .failed,
             progressSummary: "old",
             startedAt: .now,
@@ -798,6 +903,18 @@ final class AppModelTests: XCTestCase {
         )
 
         await MainActor.run {
+            model.sessions = [
+                TmuxSession(
+                    id: job.sessionID,
+                    hostID: job.hostID,
+                    hostName: job.hostName,
+                    name: job.sessionName,
+                    workingDirectory: nil,
+                    status: .attached,
+                    createdAt: Date(timeIntervalSince1970: 0),
+                    lastAttachedAt: nil
+                )
+            ]
             model.jobs = [job]
             model.stopJob(staleCopy)
         }
@@ -838,7 +955,7 @@ final class AppModelTests: XCTestCase {
         XCTFail("Condition was not met before timeout")
     }
 }
-// swiftlint:enable type_body_length
+// swiftlint:enable type_body_length function_body_length
 
 private enum TestError: LocalizedError {
     case sample
@@ -866,6 +983,19 @@ private final class SaveRecorder {
         defer { lock.unlock() }
         return savedSnapshots
     }
+}
+
+private func makeSession(for host: SSHub.Host, id: UUID? = nil, name: String = "default") -> SSHub.TmuxSession {
+    SSHub.TmuxSession(
+        id: id ?? host.id,
+        hostID: host.id,
+        hostName: host.name,
+        name: name,
+        workingDirectory: nil,
+        status: .attached,
+        createdAt: Date(timeIntervalSince1970: 0),
+        lastAttachedAt: nil
+    )
 }
 
 private actor ConnectivityCheckRecorder {

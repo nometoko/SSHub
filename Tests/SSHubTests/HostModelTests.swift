@@ -140,6 +140,9 @@ final class HostModelTests: XCTestCase {
         XCTAssertFalse(draft.isValid)
 
         draft.hostID = UUID()
+        XCTAssertFalse(draft.isValid)
+
+        draft.sessionID = UUID()
         XCTAssertTrue(draft.isValid)
     }
 
@@ -197,11 +200,14 @@ final class HostModelTests: XCTestCase {
 
     func testJobMakeDraftRestoresEditableFields() {
         let hostID = UUID()
+        let sessionID = UUID()
         let job = Job(
             id: UUID(),
             name: "train-resnet50",
             hostID: hostID,
             hostName: "gpu-01",
+            sessionID: sessionID,
+            sessionName: "vision-lab",
             status: .running,
             progressSummary: "Epoch 2/10",
             startedAt: Date(timeIntervalSince1970: 100),
@@ -214,8 +220,36 @@ final class HostModelTests: XCTestCase {
 
         XCTAssertEqual(draft.name, "train-resnet50")
         XCTAssertEqual(draft.hostID, hostID)
+        XCTAssertEqual(draft.sessionID, sessionID)
         XCTAssertEqual(draft.command, "python train.py")
         XCTAssertEqual(draft.workingDirectory, "~/project")
+    }
+
+    func testJobDraftAvailableSessionsFiltersByHost() {
+        let selectedHostID = UUID()
+        let matchingSession = TmuxSession(
+            id: UUID(),
+            hostID: selectedHostID,
+            hostName: "gpu-01",
+            name: "vision-lab",
+            workingDirectory: nil,
+            status: .attached,
+            createdAt: Date(timeIntervalSince1970: 10),
+            lastAttachedAt: nil
+        )
+        let otherSession = TmuxSession(
+            id: UUID(),
+            hostID: UUID(),
+            hostName: "sim-lab",
+            name: "case7",
+            workingDirectory: nil,
+            status: .detached,
+            createdAt: Date(timeIntervalSince1970: 20),
+            lastAttachedAt: nil
+        )
+        let draft = JobDraft(hostID: selectedHostID)
+
+        XCTAssertEqual(draft.availableSessions(in: [matchingSession, otherSession]), [matchingSession])
     }
 
     func testJobIsHostAvailableMatchesByIdentifier() {
