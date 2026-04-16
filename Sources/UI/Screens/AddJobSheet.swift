@@ -88,7 +88,12 @@ struct AddJobSheet: View {
             .navigationTitle(title)
             .onChange(of: draft.hostID) { _, newHostID in
                 let sessionsForHost = sessions.filter { $0.hostID == newHostID }
-                draft.sessionID = draft.normalizedSessionID(in: sessionsForHost)
+                if let selectedSessionID = draft.sessionID,
+                   sessionsForHost.contains(where: { $0.id == selectedSessionID }) {
+                    return
+                }
+
+                draft.sessionID = sessionsForHost.first?.id
             }
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
