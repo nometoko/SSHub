@@ -34,7 +34,7 @@ struct Host: Identifiable, Codable, Equatable {
 
     static let sampleData: [Host] = [
         Host(
-            id: UUID(),
+            id: SampleDataIDs.gpuHost,
             name: "gpu-01",
             hostAlias: "gpu-01",
             username: nil,
@@ -44,7 +44,7 @@ struct Host: Identifiable, Codable, Equatable {
             lastCheckedAt: .now
         ),
         Host(
-            id: UUID(),
+            id: SampleDataIDs.simHost,
             name: "sim-lab",
             hostAlias: "sim-lab",
             username: "iwamoto",
@@ -185,11 +185,110 @@ struct HostDraft {
     }
 }
 
+private enum SampleDataIDs {
+    static let gpuHost = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
+    static let simHost = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!
+    static let gpuSession = UUID(uuidString: "33333333-3333-3333-3333-333333333333")!
+    static let simSession = UUID(uuidString: "44444444-4444-4444-4444-444444444444")!
+}
+
+struct TmuxSession: Identifiable, Codable, Equatable {
+    let id: UUID
+    let hostID: UUID
+    let hostName: String
+    let name: String
+    let workingDirectory: String?
+    let status: TmuxSessionStatus
+    let createdAt: Date
+    let lastAttachedAt: Date?
+
+    static let sampleData: [TmuxSession] = [
+        TmuxSession(
+            id: SampleDataIDs.gpuSession,
+            hostID: SampleDataIDs.gpuHost,
+            hostName: "gpu-01",
+            name: "vision-lab",
+            workingDirectory: "~/projects/vision",
+            status: .attached,
+            createdAt: .now.addingTimeInterval(-12_000),
+            lastAttachedAt: .now.addingTimeInterval(-300)
+        ),
+        TmuxSession(
+            id: SampleDataIDs.simSession,
+            hostID: SampleDataIDs.simHost,
+            hostName: "sim-lab",
+            name: "case7-debug",
+            workingDirectory: "~/simulations/case7",
+            status: .detached,
+            createdAt: .now.addingTimeInterval(-28_000),
+            lastAttachedAt: .now.addingTimeInterval(-3_600)
+        )
+    ]
+}
+
+enum TmuxSessionStatus: String, Codable, CaseIterable, Hashable {
+    case attached
+    case detached
+    case terminated
+    case unknown
+}
+
+extension TmuxSession {
+    func isHostAvailable(in hosts: [Host]) -> Bool {
+        hosts.contains(where: { $0.id == hostID })
+    }
+
+    func makeDraft() -> TmuxSessionDraft {
+        TmuxSessionDraft(
+            name: name,
+            hostID: hostID,
+            workingDirectory: workingDirectory ?? ""
+        )
+    }
+}
+
+struct TmuxSessionDraft {
+    var name: String = ""
+    var hostID: UUID?
+    var workingDirectory: String = ""
+
+    var isValid: Bool {
+        hostID != nil &&
+        !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func normalizedHostID(in hosts: [Host]) -> UUID? {
+        guard !hosts.isEmpty else {
+            return nil
+        }
+
+        if let hostID, hosts.contains(where: { $0.id == hostID }) {
+            return hostID
+        }
+
+        if hostID == nil {
+            return hosts.first?.id
+        }
+
+        return hostID
+    }
+
+    func selectedHostExists(in hosts: [Host]) -> Bool {
+        guard let hostID else {
+            return false
+        }
+
+        return hosts.contains(where: { $0.id == hostID })
+    }
+}
+
 struct Job: Identifiable, Codable, Equatable {
     let id: UUID
     let name: String
     let hostID: UUID
     let hostName: String
+    let sessionID: UUID
+    let sessionName: String
     let status: JobStatus
     let progressSummary: String
     let startedAt: Date
@@ -201,8 +300,10 @@ struct Job: Identifiable, Codable, Equatable {
         Job(
             id: UUID(),
             name: "train-resnet50",
-            hostID: UUID(),
+            hostID: SampleDataIDs.gpuHost,
             hostName: "gpu-01",
+            sessionID: SampleDataIDs.gpuSession,
+            sessionName: "vision-lab",
             status: .running,
             progressSummary: "Epoch 3/10",
             startedAt: .now.addingTimeInterval(-4200),
@@ -213,8 +314,10 @@ struct Job: Identifiable, Codable, Equatable {
         Job(
             id: UUID(),
             name: "fluid-sim-case7",
-            hostID: UUID(),
+            hostID: SampleDataIDs.simHost,
             hostName: "sim-lab",
+            sessionID: SampleDataIDs.simSession,
+            sessionName: "case7-debug",
             status: .failed,
             progressSummary: "stderr tail available",
             startedAt: .now.addingTimeInterval(-11600),
@@ -235,8 +338,40 @@ enum JobStatus: String, Codable, CaseIterable, Hashable {
 }
 
 extension Job {
+    init(
+        id: UUID,
+        name: String,
+        hostID: UUID,
+        hostName: String,
+        sessionID: UUID? = nil,
+        sessionName: String? = nil,
+        status: JobStatus,
+        progressSummary: String,
+        startedAt: Date,
+        command: String,
+        workingDirectory: String?,
+        pid: Int?
+    ) {
+        self.id = id
+        self.name = name
+        self.hostID = hostID
+        self.hostName = hostName
+        self.sessionID = sessionID ?? hostID
+        self.sessionName = sessionName ?? "default"
+        self.status = status
+        self.progressSummary = progressSummary
+        self.startedAt = startedAt
+        self.command = command
+        self.workingDirectory = workingDirectory
+        self.pid = pid
+    }
+
     func isHostAvailable(in hosts: [Host]) -> Bool {
         hosts.contains(where: { $0.id == hostID })
+    }
+
+    func isSessionAvailable(in sessions: [TmuxSession]) -> Bool {
+        sessions.contains(where: { $0.id == sessionID })
     }
 
     var runtimeSummary: String {
@@ -256,6 +391,7 @@ extension Job {
         JobDraft(
             name: name,
             hostID: hostID,
+            sessionID: sessionID,
             command: command,
             workingDirectory: workingDirectory ?? ""
         )
@@ -265,11 +401,13 @@ extension Job {
 struct JobDraft {
     var name: String = ""
     var hostID: UUID?
+    var sessionID: UUID?
     var command: String = ""
     var workingDirectory: String = ""
 
     var isValid: Bool {
         hostID != nil &&
+        sessionID != nil &&
         !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
@@ -296,6 +434,42 @@ struct JobDraft {
         }
 
         return hosts.contains(where: { $0.id == hostID })
+    }
+
+    func normalizedSessionID(in sessions: [TmuxSession]) -> UUID? {
+        guard !sessions.isEmpty else {
+            return nil
+        }
+
+        if let sessionID, sessions.contains(where: { $0.id == sessionID }) {
+            return sessionID
+        }
+
+        if sessionID == nil {
+            if let hostID {
+                return sessions.first(where: { $0.hostID == hostID })?.id ?? sessions.first?.id
+            }
+
+            return sessions.first?.id
+        }
+
+        return sessionID
+    }
+
+    func selectedSessionExists(in sessions: [TmuxSession]) -> Bool {
+        guard let sessionID else {
+            return false
+        }
+
+        return sessions.contains(where: { $0.id == sessionID })
+    }
+
+    func availableSessions(in sessions: [TmuxSession]) -> [TmuxSession] {
+        guard let hostID else {
+            return sessions
+        }
+
+        return sessions.filter { $0.hostID == hostID }
     }
 }
 

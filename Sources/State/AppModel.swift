@@ -9,6 +9,7 @@ final class AppModel: ObservableObject {
 
     @Published var selectedSection: SidebarSection? = .dashboard
     @Published var hosts: [Host] = []
+    @Published var sessions: [TmuxSession] = TmuxSession.sampleData
     @Published var jobs: [Job] = Job.sampleData
     @Published var backendStatus: String = "macOS native skeleton ready"
     @Published var notificationSettings = NotificationSettings.sample
@@ -116,9 +117,11 @@ final class AppModel: ObservableObject {
     func addJob(from draft: JobDraft) {
         guard
             let hostID = draft.hostID,
-            let host = hosts.first(where: { $0.id == hostID })
+            let host = hosts.first(where: { $0.id == hostID }),
+            let sessionID = draft.sessionID,
+            let session = sessions.first(where: { $0.id == sessionID && $0.hostID == hostID })
         else {
-            jobErrorMessage = "Select an existing host before launching the job."
+            jobErrorMessage = "Select an existing host and tmux session before launching the job."
             return
         }
 
@@ -130,6 +133,8 @@ final class AppModel: ObservableObject {
             name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines),
             hostID: host.id,
             hostName: host.name,
+            sessionID: session.id,
+            sessionName: session.name,
             status: .running,
             progressSummary: "Launching...",
             startedAt: .now,
@@ -148,9 +153,11 @@ final class AppModel: ObservableObject {
 
         guard
             let hostID = draft.hostID,
-            let host = hosts.first(where: { $0.id == hostID })
+            let host = hosts.first(where: { $0.id == hostID }),
+            let sessionID = draft.sessionID,
+            let session = sessions.first(where: { $0.id == sessionID && $0.hostID == hostID })
         else {
-            jobErrorMessage = "Select an existing host before saving the job."
+            jobErrorMessage = "Select an existing host and tmux session before saving the job."
             return
         }
 
@@ -163,6 +170,8 @@ final class AppModel: ObservableObject {
             name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines),
             hostID: host.id,
             hostName: host.name,
+            sessionID: session.id,
+            sessionName: session.name,
             status: currentJob.status,
             progressSummary: currentJob.progressSummary,
             startedAt: currentJob.startedAt,
@@ -172,11 +181,84 @@ final class AppModel: ObservableObject {
         )
     }
 
+    func addSession(from draft: TmuxSessionDraft) {
+        guard
+            let hostID = draft.hostID,
+            let host = hosts.first(where: { $0.id == hostID })
+        else {
+            jobErrorMessage = "Select an existing host before creating the tmux session."
+            return
+        }
+
+        jobErrorMessage = nil
+
+        let trimmedWorkingDirectory = draft.workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        let session = TmuxSession(
+            id: UUID(),
+            hostID: host.id,
+            hostName: host.name,
+            name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines),
+            workingDirectory: trimmedWorkingDirectory.isEmpty ? nil : trimmedWorkingDirectory,
+            status: .detached,
+            createdAt: .now,
+            lastAttachedAt: nil
+        )
+
+        sessions.insert(session, at: 0)
+    }
+
+    func updateSession(_ session: TmuxSession, from draft: TmuxSessionDraft) {
+        guard let index = sessions.firstIndex(where: { $0.id == session.id }) else {
+            return
+        }
+
+        guard
+            let hostID = draft.hostID,
+            let host = hosts.first(where: { $0.id == hostID })
+        else {
+            jobErrorMessage = "Select an existing host before saving the tmux session."
+            return
+        }
+
+        jobErrorMessage = nil
+
+        let currentSession = sessions[index]
+        let trimmedWorkingDirectory = draft.workingDirectory.trimmingCharacters(in: .whitespacesAndNewlines)
+        let updatedSession = TmuxSession(
+            id: currentSession.id,
+            hostID: host.id,
+            hostName: host.name,
+            name: draft.name.trimmingCharacters(in: .whitespacesAndNewlines),
+            workingDirectory: trimmedWorkingDirectory.isEmpty ? nil : trimmedWorkingDirectory,
+            status: currentSession.status,
+            createdAt: currentSession.createdAt,
+            lastAttachedAt: currentSession.lastAttachedAt
+        )
+
+        sessions[index] = updatedSession
+        updateJobsForSession(updatedSession)
+    }
+
+    func deleteSession(_ session: TmuxSession) {
+        guard let index = sessions.firstIndex(where: { $0.id == session.id }) else {
+            return
+        }
+
+        if jobs.contains(where: { $0.sessionID == session.id && $0.status == .running }) {
+            jobErrorMessage = "Stop running jobs in \(session.name) before removing the tmux session."
+            return
+        }
+
+        jobErrorMessage = nil
+        sessions.remove(at: index)
+    }
+
     func deleteJob(_ job: Job) {
         guard let index = jobs.firstIndex(where: { $0.id == job.id }) else {
             return
         }
 
+        jobErrorMessage = nil
         jobs.remove(at: index)
     }
 
@@ -189,6 +271,12 @@ final class AppModel: ObservableObject {
     }
 
     func restartJob(_ job: Job) {
+        guard sessions.contains(where: { $0.id == job.sessionID }) else {
+            jobErrorMessage = "The tmux session for this job no longer exists."
+            return
+        }
+
+        jobErrorMessage = nil
         setJobStatus(
             jobID: job.id,
             status: .running,
@@ -319,6 +407,8 @@ final class AppModel: ObservableObject {
             name: job.name,
             hostID: job.hostID,
             hostName: job.hostName,
+            sessionID: job.sessionID,
+            sessionName: job.sessionName,
             status: status,
             progressSummary: progressSummary,
             startedAt: job.startedAt,
@@ -326,6 +416,29 @@ final class AppModel: ObservableObject {
             workingDirectory: job.workingDirectory,
             pid: job.pid
         )
+    }
+
+    private func updateJobsForSession(_ session: TmuxSession) {
+        jobs = jobs.map { job in
+            guard job.sessionID == session.id else {
+                return job
+            }
+
+            return Job(
+                id: job.id,
+                name: job.name,
+                hostID: session.hostID,
+                hostName: session.hostName,
+                sessionID: session.id,
+                sessionName: session.name,
+                status: job.status,
+                progressSummary: job.progressSummary,
+                startedAt: job.startedAt,
+                command: job.command,
+                workingDirectory: job.workingDirectory,
+                pid: job.pid
+            )
+        }
     }
 
     private func hasRunningJob(for hostID: UUID) -> Bool {
