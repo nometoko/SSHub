@@ -8,6 +8,7 @@ struct AddJobSheet: View {
     let saveButtonTitle: String
     let hosts: [Host]
     let sessions: [TmuxSession]
+    let allowsHostSelection: Bool
     let missingHostName: String?
     let missingSessionName: String?
     let onSave: (JobDraft) -> Bool
@@ -17,6 +18,7 @@ struct AddJobSheet: View {
         saveButtonTitle: String = "Launch",
         hosts: [Host],
         sessions: [TmuxSession],
+        allowsHostSelection: Bool = true,
         initialDraft: JobDraft? = nil,
         missingHostName: String? = nil,
         missingSessionName: String? = nil,
@@ -26,6 +28,7 @@ struct AddJobSheet: View {
         self.saveButtonTitle = saveButtonTitle
         self.hosts = hosts
         self.sessions = sessions
+        self.allowsHostSelection = allowsHostSelection
         self.missingHostName = missingHostName
         self.missingSessionName = missingSessionName
         self.onSave = onSave
@@ -54,6 +57,7 @@ struct AddJobSheet: View {
                                 .tag(Optional(host.id))
                         }
                     }
+                    .disabled(hostSelectionIsLocked)
 
                     if let staleHostMessage {
                         Text(staleHostMessage)
@@ -153,6 +157,12 @@ struct AddJobSheet: View {
         }
 
         return "Removed session"
+    }
+}
+
+private extension AddJobSheet {
+    var hostSelectionIsLocked: Bool {
+        !allowsHostSelection && draft.selectedHostExists(in: hosts)
     }
 }
 

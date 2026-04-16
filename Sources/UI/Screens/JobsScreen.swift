@@ -80,6 +80,7 @@ struct JobsScreen: View {
                 saveButtonTitle: "Save",
                 hosts: appModel.hosts,
                 sessions: appModel.sessions,
+                allowsHostSelection: false,
                 initialDraft: job.makeDraft(),
                 missingHostName: job.hostName,
                 missingSessionName: job.sessionName
